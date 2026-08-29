@@ -15,7 +15,6 @@ import {
   useSpring,
   useTransform,
 } from "motion/react";
-import { usePostHog } from "posthog-js/react";
 import {
   type CSSProperties,
   useCallback,
@@ -222,7 +221,6 @@ function Landing() {
   const [stickers, setStickers] = useState(initialStickers);
   const [activeStickerId, setActiveStickerId] = useState<string | null>(null);
   const [activeToolIndex, setActiveToolIndex] = useState(0);
-  const posthog = usePostHog();
   const stickerLayerRef = useRef<HTMLDivElement | null>(null);
   const toolsSectionRef = useRef<HTMLDivElement | null>(null);
   const vectorsSectionRef = useRef<HTMLElement | null>(null);
@@ -352,22 +350,16 @@ function Landing() {
       try {
         const docs = await idbListDocuments();
         setSavedFileCount(docs.length);
-        const destination = docs.length > 0 ? "/files" : "/create";
-        posthog.capture("editor_opened", {
-          source: "landing_hero",
-          destination,
-          existing_file_count: docs.length,
-        });
         if (docs.length > 0) {
           await navigate({ to: "/files" });
           return;
         }
       } catch (err) {
-        posthog.captureException(err);
+        console.error("[duet] could not list documents", err);
       }
       setNewCanvasOpen(true);
     })();
-  }, [navigate, posthog]);
+  }, [navigate]);
 
   const hasSavedFiles = (savedFileCount ?? 0) > 0;
   const primaryCtaLabel = hasSavedFiles ? "Open files" : "Open editor";

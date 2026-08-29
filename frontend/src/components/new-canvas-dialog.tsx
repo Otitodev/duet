@@ -1,7 +1,6 @@
 import { StarIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useNavigate } from '@tanstack/react-router'
-import { usePostHog } from 'posthog-js/react'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ARTBOARD_PRESETS, type ArtboardPresetCategory } from '../data/artboard-presets'
 import { useEditorUnsupportedOnThisDevice } from '../hooks/use-editor-device-support'
@@ -96,7 +95,6 @@ type NewCanvasDialogProps = {
 
 export default function NewCanvasDialog({ open, onClose }: NewCanvasDialogProps) {
   const navigate = useNavigate()
-  const posthog = usePostHog()
   const editorUnsupported = useEditorUnsupportedOnThisDevice()
   const titleId = useId()
   const panelRef = useRef<HTMLDivElement>(null)
@@ -127,15 +125,9 @@ export default function NewCanvasDialog({ open, onClose }: NewCanvasDialogProps)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
 
-  const goCreate = (w: number, h: number, presetLabel?: string) => {
+  const goCreate = (w: number, h: number) => {
     const W = Math.min(CANVAS_MAX, Math.max(CANVAS_MIN, Math.round(w)))
     const H = Math.min(CANVAS_MAX, Math.max(CANVAS_MIN, Math.round(h)))
-    posthog.capture('canvas_created', {
-      width: W,
-      height: H,
-      creation_mode: presetLabel ? 'preset' : 'custom',
-      preset_label: presetLabel ?? null,
-    })
     void navigate({ to: '/create', search: { w: W, h: H } })
     onClose()
   }
@@ -186,7 +178,7 @@ export default function NewCanvasDialog({ open, onClose }: NewCanvasDialogProps)
             <button
               type="button"
               className="group flex w-full items-center gap-3 rounded-[1rem] border border-transparent bg-[var(--surface)] px-3 py-3 text-left transition-colors hover:border-black/[0.08] hover:bg-black/[0.03]"
-              onClick={() => goCreate(preset.width, preset.height, preset.label)}
+              onClick={() => goCreate(preset.width, preset.height)}
             >
               <div
                 className={[

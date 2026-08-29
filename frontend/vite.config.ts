@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import viteReact from '@vitejs/plugin-react'
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig } from 'vite'
 
 const require = createRequire(import.meta.url)
 
@@ -24,8 +24,7 @@ const hasHugeiconsPro = (() => {
   }
 })()
 
-const config = defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '')
+const config = defineConfig(() => {
   console.info(
     `[icons] ${hasHugeiconsPro ? 'Hugeicons Pro detected' : 'Hugeicons Pro not installed; using free fallback'}`,
   )
@@ -49,15 +48,6 @@ const config = defineConfig(({ mode }) => {
       ],
     },
     plugins: [tanstackRouter({ target: 'react' }), tailwindcss(), viteReact()],
-    server: {
-      proxy: {
-        '/ingest': {
-          target: env.VITE_PUBLIC_POSTHOG_HOST,
-          changeOrigin: true,
-          rewrite: (path: string) => path.replace(/^\/ingest/, ''),
-        },
-      },
-    },
   }
 })
 

@@ -1,7 +1,6 @@
 import { ArrowDown01Icon, CloudUploadIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { createFileRoute } from '@tanstack/react-router'
-import { usePostHog } from 'posthog-js/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import DeleteConfirmDialog from '../components/delete-confirm-dialog'
 import DocumentMigrationDialog from '../components/document-migration-dialog'
@@ -62,7 +61,6 @@ function FilesPage() {
   const [migrationBusy, setMigrationBusy] = useState(false)
   const actionsRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const posthog = usePostHog()
   const navigate = Route.useNavigate()
 
   const clearSelection = useCallback(() => setSelectedIds([]), [])
@@ -133,7 +131,6 @@ function FilesPage() {
 
   const bulkDownload = useCallback(() => {
     const ids = [...selectedIds]
-    posthog.capture('files_bulk_downloaded', { file_count: ids.length })
     void (async () => {
       try {
         for (const id of ids) {
@@ -141,11 +138,10 @@ function FilesPage() {
           await new Promise(r => setTimeout(r, 140))
         }
       } catch (err) {
-        posthog.captureException(err)
         console.error('[avnac] bulk download failed', err)
       }
     })()
-  }, [selectedIds, posthog])
+  }, [selectedIds])
 
   const bulkTrash = useCallback(() => {
     const ids = [...selectedIds]
@@ -165,7 +161,6 @@ function FilesPage() {
     if (!deleteDialog) return
     const ids = [...deleteDialog.ids]
     setDeleteDialog(null)
-    posthog.capture('file_deleted', { file_count: ids.length, file_ids: ids })
     void (async () => {
       try {
         for (const id of ids) {
@@ -175,11 +170,10 @@ function FilesPage() {
         setSelectedIds(prev => prev.filter(id => !ids.includes(id)))
         refreshList()
       } catch (err) {
-        posthog.captureException(err)
         console.error('[avnac] delete failed', err)
       }
     })()
-  }, [deleteDialog, refreshList, posthog])
+  }, [deleteDialog, refreshList])
 
   const requestDeleteFile = useCallback((id: string) => {
     setDeleteDialog({
@@ -198,7 +192,6 @@ function FilesPage() {
         try {
           raw = JSON.parse(await file.text()) as unknown
         } catch (err) {
-          posthog.captureException(err)
           setImportError(
             'That file is not valid JSON. Choose an exported Avnac JSON document and try again.',
           )
@@ -214,23 +207,15 @@ function FilesPage() {
         const id = crypto.randomUUID()
         const name = nameFromImportFilename(file.name)
         await idbPutDocument(id, document, { name })
-        posthog.capture('file_imported', {
-          file_id: id,
-          file_name: name,
-          source_name: file.name,
-          source_type: 'json',
-          imported_version: document.v,
-        })
         refreshList()
         void navigate({ to: '/create', search: { id } })
       } catch (err) {
-        posthog.captureException(err)
         setImportError(
           'The file could not be imported into this browser right now. Try again in a moment.',
         )
       }
     },
-    [navigate, posthog, refreshList],
+    [navigate, refreshList],
   )
 
   const onImportInputChange = useCallback(
@@ -262,22 +247,11 @@ function FilesPage() {
           triggerSource: source,
           openFileId: row.id,
         })
-        posthog.capture('legacy_conversion_prompt_opened', {
-          surface: 'files_page',
-          trigger_source: source,
-          file_count: 1,
-          file_ids: [row.id],
-          open_after_conversion: true,
-        })
         return
       }
-      posthog.capture('file_opened', {
-        file_id: row.id,
-        method: source,
-      })
       void navigate({ to: '/create', search: { id: row.id } })
     },
-    [navigate, posthog],
+    [navigate],
   )
 
   const requestMigrateAll = useCallback(() => {
@@ -295,59 +269,29 @@ function FilesPage() {
       confirmLabel: legacyItems.length === 1 ? 'Convert file' : 'Migrate all files',
       triggerSource: 'banner',
     })
-    posthog.capture('legacy_conversion_prompt_opened', {
-      surface: 'files_page',
-      trigger_source: 'banner',
-      file_count: legacyItems.length,
-      file_ids: legacyItems.map(row => row.id),
-      open_after_conversion: false,
-    })
   }, [legacyItems])
 
   const confirmMigration = useCallback(() => {
     if (!migrationDialog || migrationBusy) return
-    const { ids, openFileId, triggerSource } = migrationDialog
-    posthog.capture('legacy_conversion_started', {
-      surface: 'files_page',
-      trigger_source: triggerSource,
-      file_count: ids.length,
-      file_ids: ids,
-      open_after_conversion: openFileId != null,
-    })
+    const { ids, openFileId } = migrationDialog
     setMigrationBusy(true)
     void (async () => {
       try {
         for (const id of ids) {
           await idbMigrateLegacyDocument(id)
         }
-        posthog.capture('legacy_conversion_completed', {
-          surface: 'files_page',
-          trigger_source: triggerSource,
-          file_count: ids.length,
-          file_ids: ids,
-          open_after_conversion: openFileId != null,
-          opened_file_id: openFileId ?? null,
-        })
         setMigrationDialog(null)
         refreshList()
         if (openFileId) {
           void navigate({ to: '/create', search: { id: openFileId } })
         }
       } catch (err) {
-        posthog.capture('legacy_conversion_failed', {
-          surface: 'files_page',
-          trigger_source: triggerSource,
-          file_count: ids.length,
-          file_ids: ids,
-          open_after_conversion: openFileId != null,
-        })
-        posthog.captureException(err)
         setImportError('Those files could not be converted right now. Try again in a moment.')
       } finally {
         setMigrationBusy(false)
       }
     })()
-  }, [migrationBusy, migrationDialog, navigate, posthog, refreshList])
+  }, [migrationBusy, migrationDialog, navigate, refreshList])
 
   return (
     <main className="hero-page relative flex min-h-[100dvh] flex-col overflow-hidden">
@@ -515,13 +459,6 @@ function FilesPage() {
         onClose={() => {
           if (migrationBusy) return
           if (migrationDialog) {
-            posthog.capture('legacy_conversion_cancelled', {
-              surface: 'files_page',
-              trigger_source: migrationDialog.triggerSource,
-              file_count: migrationDialog.ids.length,
-              file_ids: migrationDialog.ids,
-              open_after_conversion: migrationDialog.openFileId != null,
-            })
           }
           setMigrationDialog(null)
         }}

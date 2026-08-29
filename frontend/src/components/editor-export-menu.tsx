@@ -1,6 +1,5 @@
 import { ArrowDown01Icon, FileExportIcon, Tick02Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { usePostHog } from 'posthog-js/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useViewportAwarePopoverPlacement } from '../hooks/use-viewport-aware-popover'
 import EditorRangeSlider from './editor-range-slider'
@@ -180,7 +179,6 @@ export default function EditorExportMenu({ disabled, getPages, onExport }: Props
   const [pages, setPages] = useState<ExportPageOption[]>([])
   const [selectedPageIds, setSelectedPageIds] = useState<string[]>([])
   const [pagesLoading, setPagesLoading] = useState(false)
-  const posthog = usePostHog()
   const rootRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const pickPanel = useCallback(() => panelRef.current, [])
@@ -631,13 +629,6 @@ export default function EditorExportMenu({ disabled, getPages, onExport }: Props
                     pageIds: hasMultiplePages ? selectedPageIds : undefined,
                     transparent: transparentAllowed ? opts.transparent : false,
                   }
-                  posthog.capture('image_exported', {
-                    format: finalOpts.format,
-                    scale: finalOpts.multiplier,
-                    transparent: finalOpts.transparent,
-                    flattenPdf: finalOpts.flattenPdf,
-                    pageCount: finalOpts.pageIds?.length ?? 1,
-                  })
                   onExport(finalOpts)
                   setOpen(false)
                 }}
