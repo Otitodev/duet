@@ -1,31 +1,12 @@
-import { getPublicApiBase } from './public-api-base'
-
-function parseImageUrl(raw: string): URL | null {
-  if (typeof window === 'undefined') return null
-  try {
-    return new URL(raw, window.location.href)
-  } catch {
-    return null
-  }
-}
-
-function isProxyUrl(raw: string): boolean {
-  const parsed = parseImageUrl(raw)
-  if (!parsed) return false
-  return parsed.pathname.endsWith('/media/proxy') && parsed.searchParams.has('url')
-}
-
+/**
+ * Duet runs with no backend, so there is no media proxy to route remote images
+ * through. Images here arrive as `data:` or `blob:` URLs from local file drops,
+ * which are already export safe. Remote http(s) URLs pass through unchanged:
+ * they display, but may taint the canvas and break PNG export if the host sends
+ * no CORS headers. Accepted edge case — image pipelines are out of scope.
+ */
 export function getExportSafeImageUrl(raw: string): string {
-  const trimmed = raw.trim()
-  if (!trimmed) return trimmed
-  const parsed = parseImageUrl(trimmed)
-  if (!parsed) return trimmed
-  if (parsed.protocol === 'data:' || parsed.protocol === 'blob:') return trimmed
-  if (parsed.origin === window.location.origin || isProxyUrl(trimmed)) {
-    return trimmed
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return trimmed
-  return `${getPublicApiBase()}/media/proxy?url=${encodeURIComponent(parsed.toString())}`
+  return raw.trim()
 }
 
 export async function loadImageMetadata(rawUrl: string): Promise<{

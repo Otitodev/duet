@@ -27,12 +27,6 @@ const ITEMS: Item[] = [
     activeIcon: editorSidebarIcons.uploads.activeIcon,
   },
   {
-    id: 'images',
-    label: 'Images',
-    icon: editorSidebarIcons.images.icon,
-    activeIcon: editorSidebarIcons.images.activeIcon,
-  },
-  {
     id: 'icons',
     label: 'Icons',
     icon: editorSidebarIcons.icons.icon,
@@ -44,16 +38,11 @@ const ITEMS: Item[] = [
     icon: editorSidebarIcons['vector-board'].icon,
     activeIcon: editorSidebarIcons['vector-board'].activeIcon,
   },
-  {
-    id: 'apps',
-    label: 'Apps',
-    icon: editorSidebarIcons.apps.icon,
-    activeIcon: editorSidebarIcons.apps.activeIcon,
-  },
-  // Magic is temporarily hidden while the hosted AI path is paused.
+  // The Duet agent panel (activity log + proposal controls) claims the 'ai'
+  // slot in Stage 7. Left out until the panel exists so it cannot open empty.
   // {
   //   id: 'ai',
-  //   label: 'Magic',
+  //   label: 'Duet',
   //   icon: editorSidebarIcons.ai.icon,
   //   activeIcon: editorSidebarIcons.ai.activeIcon,
   //   fancy: true,

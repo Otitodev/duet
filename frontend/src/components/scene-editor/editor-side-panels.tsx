@@ -5,9 +5,7 @@ import {
   editorSidebarPanelLeftClass,
   editorSidebarPanelTopClass,
 } from '../../lib/editor-sidebar-panel-layout'
-import EditorAppsPanel from '../editor-apps-panel'
 import EditorFloatingSidebar, { type EditorSidebarPanelId } from '../editor-floating-sidebar'
-import EditorImagesPanel from '../editor-images-panel'
 import EditorLayersPanel from '../editor-layers-panel'
 import EditorUploadsPanel from '../editor-uploads-panel'
 import EditorVectorBoardPanel from '../editor-vector-board-panel'
@@ -87,7 +85,6 @@ export function EditorSidePanels({
         onRenameLayer={onRenameLayer}
       />
       <EditorUploadsPanel open={ready && activePanel === 'uploads'} onClose={onClosePanel} />
-      <EditorImagesPanel open={ready && activePanel === 'images'} onClose={onClosePanel} />
       {ready && activePanel === 'icons' ? (
         <Suspense fallback={<EditorIconsPanelLoading />}>
           <EditorIconsPanel open onClose={onClosePanel} />
@@ -102,8 +99,7 @@ export function EditorSidePanels({
         onOpenBoard={openVectorBoardWorkspace}
         onDeleteBoard={deleteVectorBoard}
       />
-      <EditorAppsPanel open={ready && activePanel === 'apps'} onClose={onClosePanel} />
-      {/* Magic is temporarily hidden while the hosted AI path is paused. */}
+      {/* Duet agent panel mounts here (activity log + proposal controls). */}
       {vectorWorkspaceId ? (
         <VectorBoardWorkspace
           open

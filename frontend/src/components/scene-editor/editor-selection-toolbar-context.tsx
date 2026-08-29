@@ -53,7 +53,6 @@ type SelectionToolbarActions = {
   onArtboardResize: (width: number, height: number) => void
   onTextFormatChange: (next: Partial<TextFormatToolbarValues>) => void
   openImageCropModal: () => void
-  removeImageBackground: () => void
   toggleBackgroundPopover: () => void
 }
 

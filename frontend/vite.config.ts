@@ -7,10 +7,6 @@ import { defineConfig, loadEnv } from 'vite'
 
 const require = createRequire(import.meta.url)
 
-const standardJsonEsm = fileURLToPath(
-  new URL('./node_modules/@standard-community/standard-json/dist/index.js', import.meta.url),
-)
-
 const proEditorSidebarIconsModule = fileURLToPath(
   new URL('./src/lib/editor-sidebar-icons.pro.ts', import.meta.url),
 )
@@ -50,14 +46,6 @@ const config = defineConfig(({ mode }) => {
               },
             ]
           : []),
-        // Rolldown/Vite 8 can't parse `.cjs` files that contain dynamic
-        // `await import(...)`. Force this dep to its ESM entry so the
-        // `require` condition from @tambo-ai/client never pulls the CJS
-        // shards through the production client build.
-        {
-          find: /^@standard-community\/standard-json$/,
-          replacement: standardJsonEsm,
-        },
       ],
     },
     plugins: [tanstackRouter({ target: 'react' }), tailwindcss(), viteReact()],
@@ -67,13 +55,6 @@ const config = defineConfig(({ mode }) => {
           target: env.VITE_PUBLIC_POSTHOG_HOST,
           changeOrigin: true,
           rewrite: (path: string) => path.replace(/^\/ingest/, ''),
-        },
-        // Mirrors production: Vercel mounts the backend at /api (vercel.json).
-        // Browser uses same-origin /api; only the dev server proxies to localhost.
-        '/api': {
-          target: 'http://localhost:3001',
-          changeOrigin: true,
-          rewrite: (path: string) => path.replace(/^\/api/, ''),
         },
       },
     },

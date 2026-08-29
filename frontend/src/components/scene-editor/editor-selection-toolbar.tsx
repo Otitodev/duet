@@ -1,5 +1,4 @@
-import { AiMagicIcon, CropIcon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
+import { CropIcon } from '@hugeicons/core-free-icons'
 import ArtboardResizeToolbarControl from '../artboard-resize-toolbar-control'
 import BackgroundPopover, { bgValueToSwatch } from '../background-popover'
 import CornerRadiusToolbarControl from '../corner-radius-toolbar-control'
@@ -28,7 +27,6 @@ export function EditorSelectionToolbar() {
     onArtboardResize,
     onTextFormatChange,
     openImageCropModal,
-    removeImageBackground,
     toggleBackgroundPopover,
   } = actions
   const { backgroundPopoverAnchorRef, backgroundPopoverPanelRef, selectionToolsRef, viewportRef } =
@@ -41,7 +39,6 @@ export function EditorSelectionToolbar() {
     elementToolbarLockedDisplay,
     hasObjectSelected,
     imageCornerToolbar,
-    imageRemovalState,
     ready,
     selectionFillPaint,
     selectionEffectsFooterSlot,
@@ -118,26 +115,6 @@ export function EditorSelectionToolbar() {
                   className={elementToolbarLockedDisplay ? 'pointer-events-none opacity-40' : ''}
                   onClick={openImageCropModal}
                 />
-                <Button
-                  disabled={elementToolbarLockedDisplay || imageRemovalState === 'running'}
-                  variant="ghost"
-                  size="xs"
-                  className={[
-                    'h-8 gap-1.5 rounded-lg px-2.5 text-[13px] font-medium',
-                    elementToolbarLockedDisplay ? 'pointer-events-none opacity-40' : '',
-                    imageRemovalState !== 'idle' ? 'bg-black/[0.08] text-neutral-900' : '',
-                  ].join(' ')}
-                  onClick={removeImageBackground}
-                  aria-label="Remove background"
-                  title="Remove background"
-                  iconBefore={<HugeiconsIcon icon={AiMagicIcon} size={18} strokeWidth={1.75} />}
-                >
-                  {imageRemovalState === 'running'
-                    ? 'Removing…'
-                    : imageRemovalState === 'success'
-                      ? 'Removed'
-                      : 'Remove bg'}
-                </Button>
                 <Divider orientation="vertical" />
                 <CornerRadiusToolbarControl
                   value={imageCornerToolbar.radius}
