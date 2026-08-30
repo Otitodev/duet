@@ -14,6 +14,7 @@ import {
 import { createPortal } from 'react-dom'
 import { useStore } from 'zustand'
 import { useViewportAwarePopoverPlacement } from '../hooks/use-viewport-aware-popover'
+import type { AiDesignController } from '../lib/avnac-ai-controller'
 import { cloneIconSvg } from '../lib/avnac-icon'
 import {
   AVNAC_ICON_DRAG_MIME,
@@ -131,7 +132,6 @@ import {
   type EditorStoreApi,
   EditorStoreProvider,
 } from './scene-editor/editor-store'
-import type { AiDesignController } from '../lib/avnac-ai-controller'
 import { useAiDesignController } from './scene-editor/use-ai-design-controller'
 import {
   isEditableShortcutTarget,
@@ -142,6 +142,7 @@ import {
   useVectorBoardControls,
   VectorBoardControlsProvider,
 } from './scene-editor/use-vector-board-controls'
+import { WebMcpHost } from './scene-editor/webmcp-host'
 import ShadowToolbarPopover from './shadow-toolbar-popover'
 import type { PopoverShapeKind, ShapesQuickAddKind } from './shapes-popover'
 import StrokeToolbarPopover from './stroke-toolbar-popover'
@@ -2817,6 +2818,7 @@ const SceneEditor = forwardRef<SceneEditorHandle, SceneEditorProps>(function Sce
           ) : null}
 
           <AiControllerProvider controller={aiController}>
+            <WebMcpHost />
             <EditorSidePanels
               activePanel={editorSidebarPanel}
               onClosePanel={() => setEditorSidebarPanel(null)}

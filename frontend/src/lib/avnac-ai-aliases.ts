@@ -11,7 +11,14 @@
  * scene and are rebuilt whenever the document changes.
  */
 
-import type { SceneObject, SceneObjectType } from './avnac-scene'
+import type { SceneObjectType } from './avnac-scene'
+
+/**
+ * Minimal shape the alias map needs. Kept loose so both `SceneObject` (which
+ * has `type`) and an adapted `AiObjectSummary` (which has `kind`) can be
+ * passed without either side converting first.
+ */
+export type AliasableObject = { id: string; type: string }
 
 const PREFIX: Record<SceneObjectType, string> = {
   rect: 'rect',
@@ -36,14 +43,14 @@ export type AliasMap = {
   readonly aliases: readonly string[]
 }
 
-export function buildAliasMap(objects: readonly SceneObject[]): AliasMap {
+export function buildAliasMap(objects: readonly AliasableObject[]): AliasMap {
   const toAlias = new Map<string, string>()
   const toId = new Map<string, string>()
   const aliases: string[] = []
   const counters = new Map<string, number>()
 
   for (const obj of objects) {
-    const prefix = PREFIX[obj.type] ?? 'object'
+    const prefix = PREFIX[obj.type as SceneObjectType] ?? 'object'
     const n = (counters.get(prefix) ?? 0) + 1
     counters.set(prefix, n)
     const alias = `${prefix}_${n}`

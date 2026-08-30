@@ -6,6 +6,7 @@ import DocumentMigrationDialog from '../components/document-migration-dialog'
 import EditorExportMenu from '../components/editor-export-menu'
 import SceneEditor, { type SceneEditorHandle } from '../components/scene-editor'
 import { buttonClassName, iconButtonClassName, Kicker, Surface, Text } from '../components/ui'
+import WebMcpUnavailableBanner from '../components/webmcp-unavailable-banner'
 import { useEditorUnsupportedOnThisDevice } from '../hooks/use-editor-device-support'
 import {
   idbGetEditorRecord,
@@ -197,14 +198,17 @@ function CreatePage() {
             </Text>
           </Surface>
         ) : (
-          <SceneEditor
-            ref={editorRef}
-            persistId={id}
-            persistDisplayName={documentTitle}
-            onReadyChange={setEditorReady}
-            initialArtboardWidth={initialW}
-            initialArtboardHeight={initialH}
-          />
+          <>
+            <WebMcpUnavailableBanner />
+            <SceneEditor
+              ref={editorRef}
+              persistId={id}
+              persistDisplayName={documentTitle}
+              onReadyChange={setEditorReady}
+              initialArtboardWidth={initialW}
+              initialArtboardHeight={initialH}
+            />
+          </>
         )}
       </div>
       <DocumentMigrationDialog

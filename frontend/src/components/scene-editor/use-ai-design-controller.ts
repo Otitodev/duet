@@ -106,6 +106,8 @@ export function useAiDesignController({
             return stroke?.type === 'solid' ? stroke.color : null
           })(),
           text: obj.type === 'text' ? obj.text : null,
+          fontSize: obj.type === 'text' ? obj.fontSize : null,
+          opacity: obj.opacity,
         })),
       }),
       addRectangle: spec => {

@@ -36,6 +36,9 @@ export type AiObjectSummary = {
   fill: string | null
   stroke: string | null
   text: string | null
+  /** Current size for text objects, null otherwise. Needed for "make it bigger". */
+  fontSize: number | null
+  opacity: number
 }
 
 export type AiCanvasInfo = {
