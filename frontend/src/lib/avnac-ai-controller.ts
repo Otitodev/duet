@@ -5,6 +5,9 @@
  * mounted) so they can defensively no-op when missing.
  */
 
+/** How existing objects respond when the artboard is resized. */
+export type AiReflowStrategy = 'scale' | 'fit' | 'keep_positions'
+
 export type AiObjectKind =
   | 'rect'
   | 'ellipse'
@@ -23,6 +26,8 @@ export type AiObjectSummary = {
   id: string
   kind: AiObjectKind
   label: string
+  /** Semantic template slot, e.g. 'headline' or 'accent'. Null when unset. */
+  role: string | null
   left: number
   top: number
   width: number
@@ -116,6 +121,8 @@ export type AiUpdateSpec = {
   text?: string
   fontSize?: number
   letterSpacing?: number
+  /** Semantic template slot. Empty string clears it. */
+  role?: string
 }
 
 export type AiDesignController = {
@@ -130,4 +137,23 @@ export type AiDesignController = {
   selectObjects: (ids: string[]) => number
   setBackgroundColor: (color: string) => void
   clearCanvas: () => number
+
+  /** Ids the human currently has selected, in selection order. */
+  getSelection: () => string[]
+  /**
+   * Replace artboard, background and objects in one commit. Accepts loosely
+   * shaped template JSON and normalises it. Returns the object count, or null
+   * if the payload is not a usable document.
+   */
+  loadDocument: (doc: unknown) => number | null
+  /** Resize the artboard and reflow its contents. Returns the applied size. */
+  resizeArtboard: (
+    width: number,
+    height: number,
+    strategy: AiReflowStrategy,
+  ) => { width: number; height: number }
+  /** Apply one patch across many objects. Returns how many actually matched. */
+  updateMany: (ids: string[], patch: AiUpdateSpec) => number
+  /** Tag an object with a semantic slot. Pass null to clear. */
+  setObjectRole: (id: string, role: string | null) => boolean
 }

@@ -131,6 +131,7 @@ import {
   type EditorStoreApi,
   EditorStoreProvider,
 } from './scene-editor/editor-store'
+import type { AiDesignController } from '../lib/avnac-ai-controller'
 import { useAiDesignController } from './scene-editor/use-ai-design-controller'
 import {
   isEditableShortcutTarget,
@@ -2578,9 +2579,22 @@ const SceneEditor = forwardRef<SceneEditorHandle, SceneEditorProps>(function Sce
     artboardW,
     doc,
     placeImageObject,
+    selectedIds,
     setDoc,
     setSelectedIds,
   })
+
+  // Dev-only handle so the agent-facing controller can be driven from the
+  // browser console while the WebMCP layer is being built. Stripped from
+  // production builds by the DEV guard.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    const w = window as unknown as { duet?: AiDesignController }
+    w.duet = aiController
+    return () => {
+      delete w.duet
+    }
+  }, [aiController])
 
   const selectionEffectsFooterSlot = hasObjectSelected ? (
     <>

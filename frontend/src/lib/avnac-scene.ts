@@ -33,6 +33,13 @@ export type SceneObjectBase = {
   visible: boolean
   locked: boolean
   name?: string
+  /**
+   * Semantic slot this object fills in a template: 'headline', 'subhead',
+   * 'body', 'accent', 'image-slot', 'background'. Set by templates and by the
+   * set_object_role tool; lets an agent address objects by meaning rather than
+   * position. Distinct from `name`, which is the user-facing layer label.
+   */
+  role?: string
   blurPct: number
   shadow: SceneShadow | null
 }
@@ -360,6 +367,7 @@ function baseObjectFromUnknown(
     visible: raw.visible !== false,
     locked: raw.locked === true,
     name: typeof raw.name === 'string' ? raw.name : undefined,
+    role: typeof raw.role === 'string' && raw.role.trim() ? raw.role.trim() : undefined,
     blurPct: clampBlurPct(typeof raw.blurPct === 'number' ? raw.blurPct : 0),
     shadow: parseShadow(raw.shadow),
   }

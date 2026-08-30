@@ -4,6 +4,7 @@ import type {
   AiObjectKind,
   AiObjectSummary,
 } from '../../lib/avnac-ai-controller'
+import { applyAiPatch, reflowObjectsForArtboard } from '../../lib/avnac-ai-transforms'
 import {
   type AvnacDocument,
   clampTextLetterSpacing,
@@ -12,12 +13,10 @@ import {
   objectDisplayName,
   objectSupportsFill,
   objectSupportsOutlineStroke,
+  parseAvnacDocument,
   type SceneLine,
   type SceneObject,
   type SceneText,
-  setObjectFill,
-  setObjectStroke,
-  setObjectStrokeWidth,
 } from '../../lib/avnac-scene'
 import { layoutSceneText, sceneTextLineHeight } from '../../lib/avnac-scene-render'
 import { angleFromPoints } from '../../scene-engine/primitives'
@@ -39,6 +38,7 @@ type UseAiDesignControllerArgs = {
   artboardW: number
   doc: AvnacDocument
   placeImageObject: PlaceImageObject
+  selectedIds: string[]
   setDoc: Dispatch<SetStateAction<AvnacDocument>>
   setSelectedIds: Dispatch<SetStateAction<string[]>>
 }
@@ -71,6 +71,7 @@ export function useAiDesignController({
   artboardW,
   doc,
   placeImageObject,
+  selectedIds,
   setDoc,
   setSelectedIds,
 }: UseAiDesignControllerArgs) {
@@ -90,6 +91,7 @@ export function useAiDesignController({
                 ? 'group'
                 : (obj.type as AiObjectKind),
           label: objectDisplayName(obj),
+          role: obj.role ?? null,
           left: obj.x,
           top: obj.y,
           width: obj.width,
@@ -219,40 +221,12 @@ export function useAiDesignController({
         return id ? { id } : null
       },
       updateObject: (id, patch) => {
-        let changed = false
+        if (!doc.objects.some(obj => obj.id === id)) return false
         setDoc(prev => ({
           ...prev,
-          objects: prev.objects.map(obj => {
-            if (obj.id !== id) return obj
-            changed = true
-            let next: SceneObject = { ...obj }
-            if (patch.left !== undefined) next.x = patch.left
-            if (patch.top !== undefined) next.y = patch.top
-            if (patch.width !== undefined) next.width = patch.width
-            if (patch.height !== undefined) next.height = patch.height
-            if (patch.angle !== undefined) next.rotation = patch.angle
-            if (patch.opacity !== undefined) next.opacity = Math.max(0, Math.min(1, patch.opacity))
-            if (patch.fill !== undefined)
-              next = setObjectFill(next, { type: 'solid', color: patch.fill })
-            if (patch.stroke !== undefined)
-              next = setObjectStroke(next, { type: 'solid', color: patch.stroke })
-            if (patch.strokeWidth !== undefined)
-              next = setObjectStrokeWidth(next, patch.strokeWidth)
-            if (next.type === 'text') {
-              if (patch.text !== undefined) next.text = patch.text
-              if (patch.fontSize !== undefined) next.fontSize = patch.fontSize
-              if (patch.letterSpacing !== undefined) {
-                next.letterSpacing = clampTextLetterSpacing(patch.letterSpacing)
-              }
-              next.height = Math.max(
-                layoutSceneText(next).height,
-                next.fontSize * sceneTextLineHeight(next),
-              )
-            }
-            return next
-          }),
+          objects: prev.objects.map(obj => (obj.id === id ? applyAiPatch(obj, patch) : obj)),
         }))
-        return changed
+        return true
       },
       deleteObject: id => {
         const exists = doc.objects.some(obj => obj.id === id)
@@ -275,7 +249,68 @@ export function useAiDesignController({
         setSelectedIds([])
         return count
       },
+
+      getSelection: () => [...selectedIds],
+
+      loadDocument: next => {
+        // Templates arrive as hand-authored JSON that may omit `pages` or
+        // other derived fields, so normalise through the same validator the
+        // file-import path uses. Returns null for anything unusable, which the
+        // tool layer surfaces as text rather than an exception.
+        const parsed = parseAvnacDocument(next)
+        if (!parsed) return null
+        setDoc(prev => ({
+          ...prev,
+          artboard: { ...parsed.artboard },
+          bg: parsed.bg,
+          objects: parsed.objects,
+        }))
+        setSelectedIds([])
+        return parsed.objects.length
+      },
+
+      resizeArtboard: (width, height, strategy) => {
+        const from = { width: doc.artboard.width, height: doc.artboard.height }
+        const to = { width: Math.round(width), height: Math.round(height) }
+        setDoc(prev => ({
+          ...prev,
+          artboard: { ...to },
+          objects: reflowObjectsForArtboard(prev.objects, from, to, strategy),
+        }))
+        return to
+      },
+
+      updateMany: (ids, patch) => {
+        const wanted = new Set(ids)
+        const matched = doc.objects.filter(obj => wanted.has(obj.id)).length
+        if (matched === 0) return 0
+        setDoc(prev => ({
+          ...prev,
+          objects: prev.objects.map(obj => (wanted.has(obj.id) ? applyAiPatch(obj, patch) : obj)),
+        }))
+        return matched
+      },
+
+      setObjectRole: (id, role) => {
+        if (!doc.objects.some(obj => obj.id === id)) return false
+        setDoc(prev => ({
+          ...prev,
+          objects: prev.objects.map(obj =>
+            obj.id === id ? { ...obj, role: role?.trim() || undefined } : obj,
+          ),
+        }))
+        return true
+      },
     }),
-    [addObjects, artboardH, artboardW, doc, placeImageObject, setDoc, setSelectedIds],
+    [
+      addObjects,
+      artboardH,
+      artboardW,
+      doc,
+      placeImageObject,
+      selectedIds,
+      setDoc,
+      setSelectedIds,
+    ],
   )
 }
