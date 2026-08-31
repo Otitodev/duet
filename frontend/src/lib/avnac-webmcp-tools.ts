@@ -21,7 +21,13 @@ import {
   resolveAlias,
   unknownIdMessage,
 } from './avnac-ai-aliases'
-import type { AiCanvasInfo, AiDesignController, AiObjectSummary } from './avnac-ai-controller'
+import type {
+  AiCanvasInfo,
+  AiDesignController,
+  AiObjectSummary,
+  AiReflowStrategy,
+} from './avnac-ai-controller'
+import { type AnalysisObject, describeLayout } from './avnac-layout-analysis'
 import { fail, guarded, ok, type WebMcpTool } from './avnac-webmcp'
 import { ensureGoogleFontsForFamilies } from './load-google-font'
 
@@ -336,14 +342,14 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
       execute: () =>
         ok(
           [
-            DUET_TEMPLATES.length + ' templates available:',
+            `${DUET_TEMPLATES.length} templates available:`,
             '',
             ...DUET_TEMPLATES.map(
               t =>
                 '  ' +
                 t.id.padEnd(14) +
                 ' ' +
-                (t.width + 'x' + t.height).padEnd(10) +
+                `${t.width}x${t.height}`.padEnd(10) +
                 ' ' +
                 t.name +
                 ' - ' +
@@ -368,7 +374,7 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         properties: {
           template_id: {
             type: 'string',
-            description: 'Which layout to load. One of: ' + TEMPLATE_IDS.join(', ') + '.',
+            description: `Which layout to load. One of: ${TEMPLATE_IDS.join(', ')}.`,
           },
         },
         required: ['template_id'],
@@ -390,14 +396,12 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         await ensureGoogleFontsForFamilies(TEMPLATE_FONT_FAMILIES)
         const loaded = ref.current?.loadDocument(template.document)
         if (loaded === null || loaded === undefined) {
-          return fail('The "' + template.id + '" template could not be loaded.')
+          return fail(`The "${template.id}" template could not be loaded.`)
         }
         await settle()
         const after = readScene(ref)
-        if (!after) return ok('Applied the ' + template.name + ' template.')
-        return ok(
-          ['Applied the ' + template.name + ' template.', '', formatScene(after)].join('\n'),
-        )
+        if (!after) return ok(`Applied the ${template.name} template.`)
+        return ok([`Applied the ${template.name} template.`, '', formatScene(after)].join('\n'))
       },
     },
 
@@ -465,10 +469,10 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
           if (!url) return fail('Adding an image needs a "url": an https URL or a data: URI.')
           created = await controller.addImageFromUrl({ ...place, url, width, height })
         } else {
-          return fail('Cannot add "' + kind + '". Supported types are: text, rect, ellipse, image.')
+          return fail(`Cannot add "${kind}". Supported types are: text, rect, ellipse, image.`)
         }
 
-        if (!created) return fail('The ' + kind + ' could not be added.')
+        if (!created) return fail(`The ${kind} could not be added.`)
         const newId = created.id
         await settle()
         if (typeof args.role === 'string' && args.role.trim()) {
@@ -479,11 +483,9 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         }
         const after = readScene(ref)
         const made = after?.canvas.objects.find(o => o.id === newId)
-        if (!after || !made) return ok('Added a ' + kind + '.')
+        if (!after || !made) return ok(`Added a ${kind}.`)
         return ok(
-          ['Added a ' + kind + '. It is now:', '', objectRow(after.map, made, !!made.role)].join(
-            '\n',
-          ),
+          [`Added a ${kind}. It is now:`, '', objectRow(after.map, made, !!made.role)].join('\n'),
         )
       },
     },
@@ -546,16 +548,263 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         const changed = ref.current?.updateMany(ids, patch) ?? 0
         await settle()
         const after = readScene(ref)
-        if (!after) return ok('Updated ' + changed + ' object(s).')
+        if (!after) return ok(`Updated ${changed} object(s).`)
         const rows = after.canvas.objects.filter(o => ids.includes(o.id))
         const showRole = rows.some(o => o.role)
         return ok(
           [
-            'Updated ' + changed + ' object(s) in one call:',
+            `Updated ${changed} object(s) in one call:`,
             '',
             ...rows.map(o => objectRow(after.map, o, showRole)),
           ].join('\n'),
         )
+      },
+    },
+    {
+      name: 'describe_layout',
+      description:
+        'Inspect the design for problems a person would notice: things that overlap, things ' +
+        'that fall outside the frame, edges that are almost-but-not-quite aligned, and text ' +
+        'that is hard to read against what sits behind it. Use it after building or resizing ' +
+        'something, to check your own work before telling the person you are done. Contrast is ' +
+        'measured against the dominant colour behind each piece of text, and full-bleed ' +
+        'backgrounds are ignored so they do not count as overlapping everything.',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      annotations: { readOnlyHint: true },
+      execute: () => {
+        const scene = readScene(ref)
+        if (!scene) return fail(NOT_READY)
+        const objects: AnalysisObject[] = scene.canvas.objects.map(o => ({
+          alias: aliasFor(scene.map, o.id),
+          role: o.role,
+          kind: o.kind,
+          left: o.left,
+          top: o.top,
+          width: o.width,
+          height: o.height,
+          angle: o.angle,
+          fill: o.fill,
+          text: o.text,
+          fontSize: o.fontSize,
+          opacity: o.opacity,
+          visible: o.visible,
+        }))
+        return ok(
+          describeLayout(objects, {
+            width: scene.canvas.width,
+            height: scene.canvas.height,
+            background: scene.canvas.background,
+          }),
+        )
+      },
+    },
+
+    {
+      name: 'resize_canvas',
+      description:
+        'Change the canvas size and reflow what is on it. Common sizes: Instagram story or ' +
+        'reel 1080x1920, square post 1080x1080, portrait post 1080x1350, landscape 1920x1080. ' +
+        'Choose the strategy deliberately - it decides whether the result still looks designed. ' +
+        'After a big aspect change, follow up with describe_layout to see what moved.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          width: { type: 'number', description: 'New canvas width in pixels, 100 to 16000.' },
+          height: { type: 'number', description: 'New canvas height in pixels, 100 to 16000.' },
+          strategy: {
+            type: 'string',
+            description:
+              'How existing objects respond. "scale" stretches everything to the new ' +
+              'proportions - right when the shape barely changes. "fit" scales everything ' +
+              'uniformly and centres it - right for a big aspect change, since nothing gets ' +
+              'distorted, though margins grow. "keep_positions" moves only the frame and leaves ' +
+              'objects where they are - right when the person wants to recompose by hand, and ' +
+              'the honest choice when you are unsure. Defaults to "fit".',
+          },
+        },
+        required: ['width', 'height'],
+      },
+      execute: async args => {
+        const controller = ref.current
+        if (!controller) return fail(NOT_READY)
+        const clamp = (v: unknown) =>
+          typeof v === 'number' && Number.isFinite(v)
+            ? Math.round(Math.max(100, Math.min(16000, v)))
+            : null
+        const width = clamp(args.width)
+        const height = clamp(args.height)
+        if (width === null || height === null) {
+          return fail('Give a numeric width and height, each between 100 and 16000 pixels.')
+        }
+        const asked = typeof args.strategy === 'string' ? args.strategy.toLowerCase() : 'fit'
+        const allowed: AiReflowStrategy[] = ['scale', 'fit', 'keep_positions']
+        if (!allowed.includes(asked as AiReflowStrategy)) {
+          return fail(`Unknown strategy "${asked}". Use one of: ${allowed.join(', ')}.`)
+        }
+        const before = controller.getCanvas()
+        controller.resizeArtboard(width, height, asked as AiReflowStrategy)
+        await settle()
+        const after = readScene(ref)
+        const head =
+          'Canvas resized from ' +
+          (before ? `${before.width}x${before.height}` : 'its previous size') +
+          ' to ' +
+          width +
+          'x' +
+          height +
+          ' using "' +
+          asked +
+          '".'
+        if (!after) return ok(head)
+        return ok([head, '', formatScene(after)].join('\n'))
+      },
+    },
+
+    {
+      name: 'align_objects',
+      description:
+        'Line up several objects along a shared edge or centre, or space them evenly. Aligns ' +
+        'to the group they form, so nothing jumps far from where it already sits. If only one ' +
+        'object matches, it aligns to the canvas instead - which is what someone means by ' +
+        '"centre this". Select the objects the same way as select_objects: by ids, type, role, ' +
+        'or text.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          ...FILTER_PROPERTIES,
+          mode: {
+            type: 'string',
+            description:
+              'left, right, center_h, top, bottom, center_v to line objects up; ' +
+              'distribute_h or distribute_v to space three or more evenly.',
+          },
+        },
+        required: ['mode'],
+      },
+      execute: async args => {
+        const scene = readScene(ref)
+        if (!scene) return fail(NOT_READY)
+        const mode = typeof args.mode === 'string' ? args.mode.toLowerCase() : ''
+        const modes = [
+          'left',
+          'right',
+          'center_h',
+          'top',
+          'bottom',
+          'center_v',
+          'distribute_h',
+          'distribute_v',
+        ]
+        if (!modes.includes(mode)) {
+          return fail(`Unknown mode "${mode}". Use one of: ${modes.join(', ')}.`)
+        }
+        const result = matchObjects(scene, args)
+        if (!result.ok) return fail(result.message)
+        const matched = result.matched
+        if (matched.length === 0) {
+          return ok(
+            'Nothing matched, so nothing moved. The canvas holds: ' +
+              (scene.map.aliases.join(', ') || 'nothing') +
+              '.',
+          )
+        }
+        const distributing = mode.startsWith('distribute')
+        if (distributing && matched.length < 3) {
+          return fail(
+            'Spacing objects evenly needs at least three; ' +
+              matched.length +
+              ' matched. Use left/center_h/right to line them up instead.',
+          )
+        }
+
+        // A single object has no group to align within, so the canvas is the
+        // only sensible frame of reference.
+        const single = matched.length === 1
+        const bounds = single
+          ? { left: 0, top: 0, right: scene.canvas.width, bottom: scene.canvas.height }
+          : {
+              left: Math.min(...matched.map(o => o.left)),
+              top: Math.min(...matched.map(o => o.top)),
+              right: Math.max(...matched.map(o => o.left + o.width)),
+              bottom: Math.max(...matched.map(o => o.top + o.height)),
+            }
+
+        const updates: Array<{ id: string; patch: Record<string, unknown> }> = []
+        if (distributing) {
+          const horizontal = mode === 'distribute_h'
+          const sorted = [...matched].sort((a, b) => (horizontal ? a.left - b.left : a.top - b.top))
+          const span = horizontal
+            ? sorted[sorted.length - 1].left - sorted[0].left
+            : sorted[sorted.length - 1].top - sorted[0].top
+          const step = span / (sorted.length - 1)
+          sorted.forEach((o, i) => {
+            const value = (horizontal ? sorted[0].left : sorted[0].top) + step * i
+            updates.push({
+              id: o.id,
+              patch: horizontal ? { left: Math.round(value) } : { top: Math.round(value) },
+            })
+          })
+        } else {
+          for (const o of matched) {
+            let patch: Record<string, unknown> | null = null
+            if (mode === 'left') patch = { left: Math.round(bounds.left) }
+            if (mode === 'right') patch = { left: Math.round(bounds.right - o.width) }
+            if (mode === 'center_h') {
+              patch = { left: Math.round((bounds.left + bounds.right) / 2 - o.width / 2) }
+            }
+            if (mode === 'top') patch = { top: Math.round(bounds.top) }
+            if (mode === 'bottom') patch = { top: Math.round(bounds.bottom - o.height) }
+            if (mode === 'center_v') {
+              patch = { top: Math.round((bounds.top + bounds.bottom) / 2 - o.height / 2) }
+            }
+            if (patch) updates.push({ id: o.id, patch })
+          }
+        }
+
+        const changed = ref.current?.updateEach(updates) ?? 0
+        await settle()
+        const after = readScene(ref)
+        if (!after) return ok(`Aligned ${changed} object(s).`)
+        const ids = updates.map(u => u.id)
+        const rows = after.canvas.objects.filter(o => ids.includes(o.id))
+        const showRole = rows.some(o => o.role)
+        return ok(
+          [
+            `Aligned ${changed} object(s) using "${mode}":`,
+            '',
+            ...rows.map(o => objectRow(after.map, o, showRole)),
+          ].join('\n'),
+        )
+      },
+    },
+
+    {
+      name: 'delete_objects',
+      description:
+        'Permanently remove objects from the design. This cannot be undone from your side, so ' +
+        'when a request is at all ambiguous, call select_objects first and let the person see ' +
+        'what you mean before removing anything. Select the same way as select_objects: by ids, ' +
+        'type, role, or text.',
+      inputSchema: { type: 'object', properties: { ...FILTER_PROPERTIES }, required: [] },
+      execute: async args => {
+        const scene = readScene(ref)
+        if (!scene) return fail(NOT_READY)
+        const result = matchObjects(scene, args)
+        if (!result.ok) return fail(result.message)
+        if (result.matched.length === 0) {
+          return ok(
+            'Nothing matched, so nothing was deleted. The canvas holds: ' +
+              (scene.map.aliases.join(', ') || 'nothing') +
+              '.',
+          )
+        }
+        const names = result.matched.map(o => aliasFor(scene.map, o.id))
+        const removed = ref.current?.deleteMany(result.matched.map(o => o.id)) ?? 0
+        await settle()
+        const after = readScene(ref)
+        const head = `Deleted ${removed} object(s): ${names.join(', ')}.`
+        if (!after) return ok(head)
+        return ok([head, '', formatScene(after)].join('\n'))
       },
     },
   ]

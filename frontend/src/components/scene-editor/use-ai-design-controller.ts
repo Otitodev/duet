@@ -112,6 +112,7 @@ export function useAiDesignController({
           text: obj.type === 'text' ? obj.text : null,
           fontSize: obj.type === 'text' ? obj.fontSize : null,
           opacity: obj.opacity,
+          visible: obj.visible,
         })),
       }),
       addRectangle: spec => {
@@ -297,6 +298,37 @@ export function useAiDesignController({
         return matched
       },
 
+      updateEach: updates => {
+        const byId = new Map(updates.map(u => [u.id, u.patch]))
+        let changed = 0
+        setDoc(prev => {
+          let n = 0
+          const objects = prev.objects.map(obj => {
+            const patch = byId.get(obj.id)
+            if (!patch) return obj
+            n += 1
+            return applyAiPatch(obj, patch)
+          })
+          // Assigned rather than incremented, so a double-invoked updater
+          // cannot inflate the count.
+          changed = n
+          return { ...prev, objects }
+        })
+        return changed
+      },
+
+      deleteMany: ids => {
+        const wanted = new Set(ids)
+        let removed = 0
+        setDoc(prev => {
+          const objects = prev.objects.filter(obj => !wanted.has(obj.id))
+          removed = prev.objects.length - objects.length
+          return { ...prev, objects }
+        })
+        setSelectedIds(prev => prev.filter(id => !wanted.has(id)))
+        return removed
+      },
+
       setObjectRole: (id, role) => {
         // Checked inside the updater rather than against the captured `doc`:
         // an object added moments ago is not in `doc` yet, so an outer guard
@@ -315,15 +347,6 @@ export function useAiDesignController({
         return found
       },
     }),
-    [
-      addObjects,
-      artboardH,
-      artboardW,
-      doc,
-      placeImageObject,
-      selectedIds,
-      setDoc,
-      setSelectedIds,
-    ],
+    [addObjects, artboardH, artboardW, doc, placeImageObject, selectedIds, setDoc, setSelectedIds],
   )
 }

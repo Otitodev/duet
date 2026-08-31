@@ -39,6 +39,8 @@ export type AiObjectSummary = {
   /** Current size for text objects, null otherwise. Needed for "make it bigger". */
   fontSize: number | null
   opacity: number
+  /** Hidden objects are skipped by layout analysis -- nobody can see them. */
+  visible: boolean
 }
 
 export type AiCanvasInfo = {
@@ -159,4 +161,12 @@ export type AiDesignController = {
   updateMany: (ids: string[], patch: AiUpdateSpec) => number
   /** Tag an object with a semantic slot. Pass null to clear. */
   setObjectRole: (id: string, role: string | null) => boolean
+  /**
+   * Apply a *different* patch to each of many objects, in a single commit.
+   * updateMany applies one shared patch; alignment needs a distinct x per
+   * object, and looping updateObject would re-render once per object.
+   */
+  updateEach: (updates: Array<{ id: string; patch: AiUpdateSpec }>) => number
+  /** Remove many objects in one commit. Returns how many actually existed. */
+  deleteMany: (ids: string[]) => number
 }
