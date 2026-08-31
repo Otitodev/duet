@@ -1,203 +1,96 @@
-# Avnac
+# Duet
 
-Avnac is a browser-first design editor for posters, layouts, social graphics, and other canvas-based compositions.
+**Duet is a fork of [Avnac](https://github.com/xt42io/avnac), an open source browser design editor. The original work is by the Avnac authors and remains under AGPL-3.0. Duet's contribution is a WebMCP tool layer that lets any AI agent operate the same canvas a person is working on.**
 
+> **Modification notice (AGPL-3.0 §5a).** This is a modified version of Avnac. Files were changed beginning **30 August 2026**. See [What is new here](#what-is-new-here) for what was added and removed, and the commit history for the full record.
 
-## Current Product State
+Built for [The WebMCP Challenge](https://webmcp.devpost.com/).
 
-Avnac today is strongest around:
+- **Live:** `DUET_LIVE_URL` *(placeholder — replace with the deployed subdomain)*
+- **Source:** https://github.com/Otitodev/duet
+- **Upstream:** https://github.com/xt42io/avnac
 
-- Fast browser-local editing
-- A custom scene editor with direct manipulation controls
-- Files saved in IndexedDB with a dedicated `/files` view
-- JSON import/export
-- Legacy file migration into the current editor format
-- Image export as `PNG`, `JPG`, and `WebP`
-- Prompt-driven editing through the Magic panel
+---
 
-Things that are true right now:
+## The idea
 
-- The main editing experience lives in the frontend
-- The app is desktop-first; mobile editing is intentionally blocked
-- File persistence is primarily browser-local today
-- The backend exists, but it is optional for many day-to-day editor tasks
+A design document is a JavaScript object graph plus IndexedDB. There is no API for a server-side MCP to wrap, and until now an agent's only options were guessing at mouse coordinates or scraping the accessibility tree — neither of which understands what a layer is.
 
-## Editor Capabilities
+WebMCP puts the tool registry inside the page. Tools run in the tab, against live in-memory state, using the application's own code. For a design editor that turns out to matter in one specific way:
 
-The current editor supports:
+**The agent can see what you selected.** Not inferred from the DOM — the actual objects under your cursor, right now. An agent that only *generates* designs could hand you a picture; it could never know you just clicked two things and said "make these bigger."
 
-- Custom-size or preset canvases
-- Text, rectangles, ellipses, polygons, stars, lines, arrows, images, and vector boards
-- Selection, multi-select, marquee select, group/ungroup, reorder, and alignment
-- Resize, rotate, crop, corner radius, blur, opacity, shadows, and background editing
-- Snapping and transform overlays
-- Nested vector-board drawing areas
-- QR code generation
-- JSON file import from the files page
-- Legacy-file conversion prompts before opening older documents
+Nothing is uploaded. The document never leaves the browser.
 
-## Architecture Overview
+## What is new here
 
-### Frontend
+Avnac already had agent control of its canvas. It worked the only way that was possible before WebMCP: by embedding one specific AI vendor's SDK, which required an account, an API key, and a hosted service in the loop. Only that vendor's agent could drive it, and by the time this fork was taken that integration was paused and unreachable from the UI.
 
-The frontend is a React + Vite + TypeScript application with TanStack Router and Tailwind CSS.
+Duet removes that layer entirely and replaces it with an open browser standard. No account, no key, no vendor, no server.
 
-Key architectural points:
+**Added**
 
-- The editor no longer depends on an external canvas editing runtime for scene manipulation
-- Scene data is modeled in `frontend/src/lib/avnac-scene.ts`
-- Rendering/export logic lives in `frontend/src/lib/avnac-scene-render.ts`
-- Low-level geometry, snapping, object transforms, file placement, and related logic live under `frontend/src/scene-engine/primitives`
-- The scene editor UI has been split into smaller modules under `frontend/src/components/scene-editor`
-- Shared editor state now uses a small Zustand-backed store in `frontend/src/components/scene-editor/editor-store.tsx`
+- A WebMCP tool layer — eight tools registered through `document.modelContext`
+- A template system, so the agent starts from a hand-authored layout instead of composing by coordinate
+- Semantic `role` tags on objects (`headline`, `subhead`, `accent`, …) so an agent can address things by meaning rather than position
+- Readable object ids (`text_1`, `rect_2`) at the tool boundary, without rewriting any upstream id
+- A "WebMCP not detected" banner, so the page explains itself in a browser without support
 
-Important frontend routes:
+**Removed**
 
-- `/` landing page
-- `/files` local files manager
-- `/create` editor
+- The Tambo AI integration and its vendor SDK
+- Unsplash, the Elysia backend, background removal, QR codes
+- PostHog analytics — it contradicted the claim that nothing leaves your device
 
-### Backend
+## The tool surface
 
-The backend is an Elysia + TypeScript service. It is not required for all local editing workflows, but it is useful for:
+| Tool | | What it is for |
+| --- | --- | --- |
+| `get_scene` | read | The whole design: canvas, every object, layer order |
+| `get_selection` | read | What the person has selected **right now** |
+| `list_templates` | read | The starting layouts available |
+| `apply_template` | write | Load a layout and return it ready to fill in |
+| `select_objects` | write | Highlight objects in the person's editor |
+| `add_object` | write | Add one element on top of what is there |
+| `update_object` | write | Change one object |
+| `update_many` | write | Change many objects in a single call |
 
-- media proxying for export-safe remote images
-- Unsplash search/download flows
-- document and auth-related server routes that exist in the repo
+Every tool returns readable text describing the resulting state, and every failure returns an explanation rather than throwing — an unknown id comes back with the list of ids that do exist.
 
-Current backend route areas:
-
-- `backend/src/routes/media.ts`
-- `backend/src/routes/unsplash.ts`
-- `backend/src/routes/documents.ts`
-
-## Repository Layout
-
-```text
-frontend/
-  src/
-    routes/                   App routes like landing, files, and editor
-    components/scene-editor/  Main editor UI modules, panels, overlays, hooks, store
-    scene-engine/primitives/  Geometry, transforms, snapping, object/file helpers
-    lib/                      Scene model, render/export, storage, previews, utilities
-    __tests__/                Frontend unit/regression tests
-
-backend/
-  src/
-    routes/                   Media, Unsplash, and document endpoints
-    plugins/                  Backend plugins such as auth wiring
-    db/                       Database setup and schema
-```
-
-## Persistence and File Handling
-
-Avnac is currently local-first.
-
-- Documents autosave in the browser
-- The files page reads from IndexedDB
-- The editor opens documents by id via `/create?id=...`
-- JSON import/export is supported from the files workflow
-- Older saved files are detected and can be migrated from the UI before editing
-
-Legacy migration behavior currently includes:
-
-- a migrate-all prompt on the files page when old files are present
-- a conversion modal when a user clicks an old file
-- a blocking conversion overlay if a user opens or refreshes an old editor URL directly
-
-## Analytics
-
-Frontend analytics use PostHog.
-
-- Root provider setup lives in `frontend/src/routes/__root.tsx`
-- The tracked event catalog is documented in `frontend/.posthog-events.json`
-
-## Local Development
-
-### Frontend
+## Running it
 
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev      # http://localhost:3300
 ```
 
-Runs on `http://localhost:3300`.
+`npm run build` produces a static bundle in `frontend/dist`, deployable to any static host. There is no backend.
 
-Optional Hugeicons Pro setup:
+### Seeing the tools
 
-- The frontend works without a Hugeicons Pro license. By default, contributors will install only the free icon packages and the app will fall back to free sidebar icons.
-- If you have a Hugeicons Pro license, set `HUGEICONS_NPM_TOKEN` before running `npm install` in `frontend/`. The optional package will install and Vite will automatically switch the sidebar to the pro icon set.
-- Do not expose this token with a `VITE_` prefix. It is only needed at install/build time.
-- In production or CI, builds can still succeed without the token. They will simply use the free fallback icons instead of the pro ones.
+The editor works as an ordinary design tool in any browser. To let an agent drive it you need a WebMCP-capable client:
 
-Example local setup for licensed installs:
+- **ChatGPT's in-app browser** — supports WebMCP with no setup
+- **Chrome 146+** — enable `chrome://flags/#enable-webmcp-testing`
+- **Claude Code** — via a community WebMCP bridge extension
 
-```bash
-cd frontend
-export HUGEICONS_NPM_TOKEN=your_token_here
-npm install
-```
+If none is present the app shows a banner explaining how to enable one. It never breaks; it just stays an ordinary editor.
 
-Useful frontend scripts:
+> The Claude in Chrome extension does **not** natively consume WebMCP at the time of writing ([open feature request](https://github.com/anthropics/claude-code/issues/30645)); it drives pages by screenshot, which is the approach WebMCP exists to replace.
+
+## Development
 
 ```bash
-cd frontend
-npm run dev
+npm test         # vitest
+npm run lint     # biome
 npm run build
-npm run preview
-npm test
 ```
 
-### Backend
+## Licence
 
-```bash
-cd backend
-npm install
-cp .env.example .env
-npm run dev
-```
+**AGPL-3.0-only**, inherited from Avnac and unchanged.
 
-Runs on `http://localhost:3001`.
+Because Duet is offered over a network, AGPL §13 applies: anyone interacting with the deployed instance is entitled to its source, which is linked from the app footer and lives at https://github.com/Otitodev/duet.
 
-Useful backend scripts:
-
-```bash
-cd backend
-npm run dev
-npm run check
-```
-
-## Backend Notes
-
-The backend matters most when you are working on remote media, Unsplash flows, or server-backed document/auth behavior.
-
-In local development, the frontend can still be the primary focus if you are working on:
-
-- scene editing
-- selection and transform behavior
-- local files
-- legacy migration UX
-- export behavior
-
-## Testing
-
-Frontend regression tests live in `frontend/src/__tests__`.
-
-Right now they cover core areas such as:
-
-- scene parsing and migration detection
-- snapping behavior
-- image/object resize behavior
-- vector-board render behavior
-- file placement helpers
-
-## Practical Notes
-
-- If you change media proxy behavior, restart the backend before testing export flows that depend on remote images
-- If you are debugging editor behavior, the frontend is the main source of truth
-- If you are debugging old-file compatibility, start with `frontend/src/lib/avnac-scene.ts` and the files/create routes
-
-## License
-
-This project is licensed under the GNU Affero General Public License v3.0 only. See [LICENSE](LICENSE).
+Upstream Avnac remains © its authors. Duet's additions are offered under the same licence.
