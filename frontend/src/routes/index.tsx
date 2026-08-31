@@ -610,6 +610,44 @@ function Landing() {
 
       <section className="landing-section">
         <div className="landing-container">
+          <div className="landing-magic-shell">
+            <div className="landing-ai-header">
+              <h2 className="display-title landing-section-title">
+                Any agent can drive this canvas
+              </h2>
+              <p className="landing-section-copy">
+                Duet registers its tools with the browser through WebMCP. An agent that opens the
+                page can read what you have selected, restyle a layout, or resize the whole design,
+                running the app&rsquo;s own code on a document that never leaves your machine.
+              </p>
+            </div>
+
+            <div className="landing-magic-grid">
+              <div className="landing-magic-prompt-card">
+                <span className="landing-magic-prompt-label">Try asking</span>
+                <div className="landing-ai-prompt-list">
+                  {TRY_ASKING.map(prompt => (
+                    <span key={prompt}>{prompt}</span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="landing-magic-card-list">
+                {agentCapabilities.map(item => (
+                  <article key={item.title} className="landing-magic-card">
+                    <span className="landing-magic-prompt-label">{item.label}</span>
+                    <h3>{item.title}</h3>
+                    <p>{item.note}</p>
+                  </article>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-section">
+        <div className="landing-container">
           <motion.div ref={toolsSectionRef} className="landing-tools-shell" style={toolsShellStyle}>
             <div className="landing-tools-sticky">
               <div className="landing-tools-header">
@@ -721,44 +759,6 @@ function Landing() {
                   aria-hidden="true"
                   dangerouslySetInnerHTML={{ __html: doodleMarkup }}
                 />
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="landing-section">
-        <div className="landing-container">
-          <div className="landing-magic-shell">
-            <div className="landing-ai-header">
-              <h2 className="display-title landing-section-title">
-                Any agent can drive this canvas
-              </h2>
-              <p className="landing-section-copy">
-                Duet registers its tools with the browser through WebMCP. An agent that opens the
-                page can read what you have selected, restyle a layout, or resize the whole design,
-                running the app&rsquo;s own code on a document that never leaves your machine.
-              </p>
-            </div>
-
-            <div className="landing-magic-grid">
-              <div className="landing-magic-prompt-card">
-                <span className="landing-magic-prompt-label">Try asking</span>
-                <div className="landing-ai-prompt-list">
-                  {TRY_ASKING.map(prompt => (
-                    <span key={prompt}>{prompt}</span>
-                  ))}
-                </div>
-              </div>
-
-              <div className="landing-magic-card-list">
-                {agentCapabilities.map(item => (
-                  <article key={item.title} className="landing-magic-card">
-                    <span className="landing-magic-prompt-label">{item.label}</span>
-                    <h3>{item.title}</h3>
-                    <p>{item.note}</p>
-                  </article>
-                ))}
               </div>
             </div>
           </div>

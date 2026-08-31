@@ -33,8 +33,22 @@
     --lagoon-deep: var(--text);
     --default-object-fill: #262626;
 
-    /* Single knob for canvas/editor accent (selection chrome, guides, focus rings, etc.) */
+    /*
+     * Duet runs on two accents, because the product has two participants.
+     *
+     * --accent is the human's: selection chrome, guides and focus rings in the
+     * editor. Warm, so what *you* have hold of always reads warm.
+     *
+     * --agent is the agent's: proposal ghosts, the Duet panel, and the brand.
+     *
+     * Keeping these different hues is not decoration. It is how you tell your
+     * own selection from the agent's suggestion at a glance, on the same
+     * canvas, at the same time.
+     */
     --accent: #ffb88e;
+    --agent: #7c3aed;
+    --agent-soft: #ede9fe;
+    --agent-line: rgba(124, 58, 237, 0.28);
   }
 
   *,
@@ -159,8 +173,8 @@
     height: 32rem;
     background: radial-gradient(
       circle at 40% 40%,
-      rgba(246, 213, 247, 0.7),
-      rgba(246, 213, 247, 0) 64%
+      rgba(196, 181, 253, 0.72),
+      rgba(196, 181, 253, 0) 64%
     );
   }
 
@@ -171,8 +185,8 @@
     height: 34rem;
     background: radial-gradient(
       circle at 35% 35%,
-      rgba(251, 233, 215, 0.75),
-      rgba(251, 233, 215, 0) 62%
+      rgba(253, 224, 197, 0.75),
+      rgba(253, 224, 197, 0) 62%
     );
   }
 
@@ -584,12 +598,12 @@
   .landing-primary-button {
     position: relative;
     color: var(--text);
-    background: linear-gradient(135deg, #fce4ec 0%, #f8bbd9 50%, #ffcdd2 100%);
-    border: 1px solid rgba(236, 182, 211, 0.35);
+    background: linear-gradient(135deg, #ede9fe 0%, #ddd6fe 50%, #fde8d7 100%);
+    border: 1px solid var(--agent-line);
     box-shadow:
-      0 12px 26px rgba(236, 182, 211, 0.2),
-      0 1px 0 rgba(255, 255, 255, 0.8) inset,
-      0 0 0 5px rgba(236, 182, 211, 0.1);
+      0 12px 26px rgba(124, 58, 237, 0.16),
+      0 1px 0 rgba(255, 255, 255, 0.85) inset,
+      0 0 0 5px rgba(124, 58, 237, 0.08);
   }
 
   
@@ -892,7 +906,8 @@
     font-weight: 700;
     letter-spacing: 0.14em;
     text-transform: uppercase;
-    color: #9d7c78;
+    /* The agent's colour: these labels sit on the WebMCP section. */
+    color: var(--agent);
   }
 
   .landing-note-card p,
