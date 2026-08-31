@@ -22,6 +22,7 @@ import {
   parseIconDragPayload,
 } from '../lib/avnac-icon-drag'
 import { loadImageMetadata } from '../lib/avnac-image-proxy'
+import { resetProposals, setArrivalHandler } from '../lib/avnac-proposals'
 import {
   AVNAC_DOC_VERSION,
   type AvnacDocument,
@@ -2586,6 +2587,17 @@ const SceneEditor = forwardRef<SceneEditorHandle, SceneEditorProps>(function Sce
     setDoc,
     setSelectedIds,
   })
+
+  // A proposal nobody notices is the worst failure this feature has: the agent
+  // waits politely on a decision the person does not know they are being asked
+  // for. Ghosts alone are easy to miss, so the panel opens itself.
+  useEffect(() => {
+    setArrivalHandler(() => setEditorSidebarPanel('ai'))
+    return () => {
+      setArrivalHandler(null)
+      resetProposals()
+    }
+  }, [])
 
   // Dev-only handle so the agent-facing controller can be driven from the
   // browser console while the WebMCP layer is being built. Stripped from

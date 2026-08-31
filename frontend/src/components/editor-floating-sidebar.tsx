@@ -38,15 +38,13 @@ const ITEMS: Item[] = [
     icon: editorSidebarIcons['vector-board'].icon,
     activeIcon: editorSidebarIcons['vector-board'].activeIcon,
   },
-  // The Duet agent panel (activity log + proposal controls) claims the 'ai'
-  // slot in Stage 7. Left out until the panel exists so it cannot open empty.
-  // {
-  //   id: 'ai',
-  //   label: 'Duet',
-  //   icon: editorSidebarIcons.ai.icon,
-  //   activeIcon: editorSidebarIcons.ai.activeIcon,
-  //   fancy: true,
-  // },
+  {
+    id: 'ai',
+    label: 'Duet',
+    icon: editorSidebarIcons.ai.icon,
+    activeIcon: editorSidebarIcons.ai.activeIcon,
+    fancy: true,
+  },
 ]
 
 type Props = {

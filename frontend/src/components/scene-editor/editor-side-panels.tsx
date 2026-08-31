@@ -5,6 +5,7 @@ import {
   editorSidebarPanelLeftClass,
   editorSidebarPanelTopClass,
 } from '../../lib/editor-sidebar-panel-layout'
+import EditorDuetPanel from '../editor-duet-panel'
 import EditorFloatingSidebar, { type EditorSidebarPanelId } from '../editor-floating-sidebar'
 import EditorLayersPanel from '../editor-layers-panel'
 import EditorUploadsPanel from '../editor-uploads-panel'
@@ -99,7 +100,7 @@ export function EditorSidePanels({
         onOpenBoard={openVectorBoardWorkspace}
         onDeleteBoard={deleteVectorBoard}
       />
-      {/* Duet agent panel mounts here (activity log + proposal controls). */}
+      <EditorDuetPanel open={ready && activePanel === 'ai'} onClose={onClosePanel} />
       {vectorWorkspaceId ? (
         <VectorBoardWorkspace
           open

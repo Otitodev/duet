@@ -7,6 +7,7 @@ import { IconButton } from '../ui'
 import { useCanvasStageContext } from './canvas-stage-context'
 import { useEditorStore } from './editor-store'
 import { SceneObjectView } from './object-view'
+import { ProposalGhosts } from './proposal-ghosts'
 import {
   ImageRemovalOverlay,
   SelectionBoundsOverlay,
@@ -276,6 +277,9 @@ export function CanvasStage() {
                         />
                       ))}
                   </div>
+                  {isActive ? (
+                    <ProposalGhosts objects={pageObjects} vectorBoardDocs={boardDocs} />
+                  ) : null}
                   {isActive ? (
                     <>
                       <SnapGuidesOverlay

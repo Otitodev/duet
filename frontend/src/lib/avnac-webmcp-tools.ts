@@ -26,8 +26,16 @@ import type {
   AiDesignController,
   AiObjectSummary,
   AiReflowStrategy,
+  AiUpdateSpec,
 } from './avnac-ai-controller'
 import { type AnalysisObject, describeLayout } from './avnac-layout-analysis'
+import {
+  awaitDecision,
+  getSnapshot as getOpenProposal,
+  hasOpenProposal,
+  openProposal,
+  type Proposal,
+} from './avnac-proposals'
 import { fail, guarded, ok, type WebMcpTool } from './avnac-webmcp'
 import { ensureGoogleFontsForFamilies } from './load-google-font'
 
@@ -159,6 +167,86 @@ const FILTER_PROPERTIES = {
     description: 'Text objects whose content contains this phrase. Case insensitive.',
   },
 } as const
+
+/** How long check_proposal waits before reporting "still pending". */
+const DECISION_WAIT_MS = 20_000
+
+/** Describe a patch in the words a person would use, for the review card. */
+function summarisePatch(patch: Record<string, unknown>): string {
+  const bits: string[] = []
+  // A person reads this row on the review card, so only name the axes that
+  // actually change. "move to same,620" is not something anyone says.
+  const x = typeof patch.left === 'number' ? Math.round(patch.left) : null
+  const y = typeof patch.top === 'number' ? Math.round(patch.top) : null
+  if (x !== null && y !== null) bits.push(`move to ${x},${y}`)
+  else if (x !== null) bits.push(`move to x ${x}`)
+  else if (y !== null) bits.push(`move to y ${y}`)
+
+  const w = typeof patch.width === 'number' ? Math.round(patch.width) : null
+  const h = typeof patch.height === 'number' ? Math.round(patch.height) : null
+  if (w !== null && h !== null) bits.push(`resize to ${w}x${h}`)
+  else if (w !== null) bits.push(`set width to ${w}`)
+  else if (h !== null) bits.push(`set height to ${h}`)
+  if (typeof patch.fill === 'string') bits.push(`fill ${patch.fill}`)
+  if (typeof patch.stroke === 'string') bits.push(`outline ${patch.stroke}`)
+  if (typeof patch.fontSize === 'number') bits.push(`${Math.round(patch.fontSize)}px`)
+  if (typeof patch.opacity === 'number') bits.push(`opacity ${patch.opacity}`)
+  if (typeof patch.angle === 'number') bits.push(`rotate ${Math.round(patch.angle)} degrees`)
+  if (typeof patch.text === 'string') {
+    const flat = patch.text.split('\n').join(' / ')
+    bits.push(`text "${flat.length > 40 ? `${flat.slice(0, 37)}...` : flat}"`)
+  }
+  return bits.length > 0 ? bits.join(', ') : 'no change'
+}
+
+/** Turn a settled proposal into something the agent can act on. */
+function reportProposal(proposal: Proposal): string {
+  if (proposal.status === 'pending') {
+    return (
+      'Proposal ' +
+      proposal.id +
+      ' is still on screen and the person has not decided yet. This is normal, not an ' +
+      'error - they are looking at it. Call check_proposal again to keep waiting, or get on ' +
+      'with something else and check back.'
+    )
+  }
+  if (proposal.status === 'expired') {
+    return (
+      'Proposal ' +
+      proposal.id +
+      ' expired before the person reviewed it, so nothing was applied. Propose again if it ' +
+      'still matters.'
+    )
+  }
+
+  const applied = proposal.changes.filter(c => c.included && !c.gone)
+  const refused = proposal.changes.filter(c => !c.included)
+  const gone = proposal.changes.filter(c => c.gone)
+  const lines: string[] = []
+
+  const headline =
+    proposal.status === 'approved'
+      ? `The person approved all ${applied.length} change(s).`
+      : proposal.status === 'rejected'
+        ? 'The person rejected every change. Nothing was applied.'
+        : 'The person approved ' + applied.length + ' of ' + proposal.changes.length + ' change(s).'
+  lines.push(`Proposal ${proposal.id}: ${proposal.status}. ${headline}`)
+
+  if (applied.length > 0) {
+    lines.push('', 'Applied:')
+    for (const c of applied) lines.push(`  ${c.alias.padEnd(9)} ${c.summary}`)
+  }
+  if (refused.length > 0) {
+    lines.push('', 'Rejected - do not simply try these again:')
+    for (const c of refused) lines.push(`  ${c.alias.padEnd(9)} ${c.summary}`)
+  }
+  if (gone.length > 0) {
+    lines.push('', 'No longer applicable, the object was gone by then:')
+    for (const c of gone) lines.push(`  ${c.alias.padEnd(9)} ${c.summary}`)
+  }
+  if (proposal.note) lines.push('', `They left a note: "${proposal.note}"`)
+  return lines.join('\n')
+}
 
 export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
   const tools: WebMcpTool[] = [
@@ -805,6 +893,167 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         const head = `Deleted ${removed} object(s): ${names.join(', ')}.`
         if (!after) return ok(head)
         return ok([head, '', formatScene(after)].join('\n'))
+      },
+    },
+    {
+      name: 'propose_changes',
+      description:
+        'Suggest a batch of edits WITHOUT applying them. The person sees a ghosted preview on ' +
+        'their canvas and approves or rejects each one; nothing changes until they do. Use this ' +
+        'for anything where taste is involved - a re-layout, a restyle, a batch of moves after ' +
+        'a resize - rather than editing directly and hoping they agree. Returns straight away ' +
+        'with a proposal id; call check_proposal to hear what they decided. Only changes to ' +
+        'existing objects are supported: to add or delete, use add_object or delete_objects.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          rationale: {
+            type: 'string',
+            description:
+              'One sentence, addressed to the person, saying what you are suggesting and why. ' +
+              'Shown at the top of their review card.',
+          },
+          changes: {
+            type: 'array',
+            description: 'The edits to preview. Each needs an id plus at least one property.',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'Object to change, e.g. "text_1".' },
+                x: { type: 'number', description: 'New left edge in canvas pixels.' },
+                y: { type: 'number', description: 'New top edge in canvas pixels.' },
+                width: { type: 'number', description: 'New width in canvas pixels.' },
+                height: { type: 'number', description: 'New height in canvas pixels.' },
+                fill: { type: 'string', description: 'New fill colour as CSS hex.' },
+                stroke: { type: 'string', description: 'New outline colour as CSS hex.' },
+                text: { type: 'string', description: 'New text content, for text objects.' },
+                fontSize: { type: 'number', description: 'New font size in canvas pixels.' },
+                opacity: { type: 'number', description: 'New opacity from 0 to 1.' },
+                rotation: { type: 'number', description: 'New rotation in degrees, clockwise.' },
+              },
+              required: ['id'],
+            },
+          },
+        },
+        required: ['rationale', 'changes'],
+      },
+      execute: args => {
+        const scene = readScene(ref)
+        if (!scene) return fail(NOT_READY)
+        if (hasOpenProposal()) {
+          const open = getOpenProposal()
+          return fail(
+            'A proposal is already on screen' +
+              (open ? ` (${open.id})` : '') +
+              ' waiting for the person. Two ghosted previews at once are unreadable - wait for ' +
+              'that decision with check_proposal before proposing anything else.',
+          )
+        }
+        const raw = Array.isArray(args.changes) ? (args.changes as Record<string, unknown>[]) : []
+        if (raw.length === 0) {
+          return fail('A proposal needs at least one change. Pass changes: [{ id, ... }].')
+        }
+
+        const changes: Array<{
+          id: string
+          alias: string
+          patch: AiUpdateSpec
+          summary: string
+        }> = []
+        const unknown: string[] = []
+        for (const entry of raw) {
+          const asked = typeof entry.id === 'string' ? entry.id : ''
+          const id = resolveAlias(scene.map, asked)
+          if (!id) {
+            unknown.push(asked || '(missing id)')
+            continue
+          }
+          const patch: Record<string, unknown> = {}
+          if (typeof entry.x === 'number') patch.left = entry.x
+          if (typeof entry.y === 'number') patch.top = entry.y
+          if (typeof entry.width === 'number') patch.width = entry.width
+          if (typeof entry.height === 'number') patch.height = entry.height
+          if (typeof entry.fill === 'string') patch.fill = entry.fill
+          if (typeof entry.stroke === 'string') patch.stroke = entry.stroke
+          if (typeof entry.text === 'string') patch.text = entry.text
+          if (typeof entry.fontSize === 'number') patch.fontSize = entry.fontSize
+          if (typeof entry.opacity === 'number') patch.opacity = entry.opacity
+          if (typeof entry.rotation === 'number') patch.angle = entry.rotation
+          if (Object.keys(patch).length === 0) continue
+          changes.push({
+            id,
+            alias: aliasFor(scene.map, id),
+            patch,
+            summary: summarisePatch(patch),
+          })
+        }
+
+        if (unknown.length > 0) {
+          return fail(unknownIdMessage(scene.map, unknown.join(', ')))
+        }
+        if (changes.length === 0) {
+          return fail(
+            'None of those changes had a property to change. Give each one at least one of: ' +
+              'x, y, width, height, fill, text, fontSize, opacity, rotation.',
+          )
+        }
+
+        const rationale =
+          typeof args.rationale === 'string' && args.rationale.trim()
+            ? args.rationale.trim()
+            : 'The agent suggested some changes.'
+        const proposal = openProposal({ rationale, changes })
+
+        return ok(
+          [
+            'Proposal ' +
+              proposal.id +
+              " is now on the person's screen as a ghosted preview, with " +
+              changes.length +
+              ' change(s):',
+            '',
+            ...changes.map(c => `  ${c.alias.padEnd(9)} ${c.summary}`),
+            '',
+            'Nothing has been applied. Call check_proposal with proposal_id "' +
+              proposal.id +
+              '" to hear what they decided.',
+          ].join('\n'),
+        )
+      },
+    },
+
+    {
+      name: 'check_proposal',
+      description:
+        'Ask what the person decided about a proposal. Waits up to twenty seconds for them, ' +
+        'then answers. A "still pending" answer means they are reading it - that is normal, ' +
+        'not a failure, so call again rather than giving up or re-proposing. Once they decide ' +
+        'you get the per-change breakdown and any note they left.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          proposal_id: {
+            type: 'string',
+            description: 'The id returned by propose_changes, e.g. "p_1".',
+          },
+        },
+        required: ['proposal_id'],
+      },
+      execute: async args => {
+        const id = typeof args.proposal_id === 'string' ? args.proposal_id.trim() : ''
+        if (!id) return fail('Give the proposal_id that propose_changes returned, e.g. "p_1".')
+        const settled = await awaitDecision(id, DECISION_WAIT_MS)
+        if (!settled) {
+          return fail(
+            'There is no proposal called "' +
+              id +
+              '". It may have been decided and dismissed already, or the page was reloaded.',
+          )
+        }
+        const after = readScene(ref)
+        const report = reportProposal(settled)
+        if (settled.status === 'pending' || !after) return ok(report)
+        return ok([report, '', formatScene(after)].join('\n'))
       },
     },
   ]
