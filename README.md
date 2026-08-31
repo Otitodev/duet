@@ -6,7 +6,7 @@
 
 Built for [The WebMCP Challenge](https://webmcp.devpost.com/).
 
-- **Live:** `DUET_LIVE_URL` *(placeholder — replace with the deployed subdomain)*
+- **Live:** https://duet.otito.site
 - **Source:** https://github.com/Otitodev/duet
 - **Upstream:** https://github.com/xt42io/avnac
 
