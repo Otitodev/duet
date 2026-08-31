@@ -6,6 +6,8 @@
  * the API as it actually behaves in Chrome 151.
  */
 
+import { recordActivity } from './avnac-activity'
+
 export type WebMcpContent = { type: 'text'; text: string }
 export type WebMcpResult = { content: WebMcpContent[] }
 
@@ -47,6 +49,15 @@ export function isWebMcpAvailable(): boolean {
   return getModelContext() !== null
 }
 
+/**
+ * Results produced by `fail`.
+ *
+ * Success and failure share a wire shape, so there is no way to tell them apart
+ * from the outside. Tracking them here lets the activity log mark a returned
+ * failure as failed without putting a non-standard flag on the wire.
+ */
+const failedResults = new WeakSet<WebMcpResult>()
+
 /** A successful result. Text should describe the resulting state, never "ok". */
 export function ok(text: string): WebMcpResult {
   return { content: [{ type: 'text', text }] }
@@ -60,18 +71,50 @@ export function ok(text: string): WebMcpResult {
  * try instead, so the agent self-corrects without another round trip.
  */
 export function fail(text: string): WebMcpResult {
-  return { content: [{ type: 'text', text }] }
+  const result: WebMcpResult = { content: [{ type: 'text', text }] }
+  failedResults.add(result)
+  return result
 }
 
-/** Guard so a tool bug surfaces as readable text rather than a broken call. */
+/** Whether a result came from `fail`. */
+export function isFailure(result: WebMcpResult): boolean {
+  return failedResults.has(result)
+}
+
+/**
+ * Guard so a tool bug surfaces as readable text rather than a broken call, and
+ * record the call.
+ *
+ * Every tool goes through here, so this is the one place activity needs
+ * capturing -- including any tool added later, with no per-tool wiring to
+ * forget.
+ */
 export function guarded(name: string, tool: WebMcpTool): WebMcpTool {
   return {
     ...tool,
     execute: async args => {
+      const started = performance.now()
+      const safeArgs = (args ?? {}) as Record<string, unknown>
       try {
-        return await tool.execute(args ?? {})
+        const result = await tool.execute(safeArgs)
+        recordActivity({
+          tool: name,
+          args: safeArgs,
+          ms: performance.now() - started,
+          ok: !isFailure(result),
+          result: result.content[0]?.text ?? '',
+        })
+        return result
       } catch (err) {
-        return fail(`${name} failed: ${err instanceof Error ? err.message : String(err)}`)
+        const message = `${name} failed: ${err instanceof Error ? err.message : String(err)}`
+        recordActivity({
+          tool: name,
+          args: safeArgs,
+          ms: performance.now() - started,
+          ok: false,
+          result: message,
+        })
+        return fail(message)
       }
     },
   }

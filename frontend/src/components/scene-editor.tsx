@@ -14,6 +14,7 @@ import {
 import { createPortal } from 'react-dom'
 import { useStore } from 'zustand'
 import { useViewportAwarePopoverPlacement } from '../hooks/use-viewport-aware-popover'
+import { hasActivity } from '../lib/avnac-activity'
 import type { AiDesignController } from '../lib/avnac-ai-controller'
 import { cloneIconSvg } from '../lib/avnac-icon'
 import {
@@ -73,6 +74,7 @@ import {
   AVNAC_VECTOR_BOARD_DRAG_MIME,
   type VectorBoardDocument,
 } from '../lib/avnac-vector-board-document'
+import { isWebMcpAvailable } from '../lib/avnac-webmcp'
 import { extractImageUrlFromDataTransfer } from '../lib/extract-image-url-from-data-transfer'
 import { loadGoogleFontFamily } from '../lib/load-google-font'
 import {
@@ -2587,6 +2589,16 @@ const SceneEditor = forwardRef<SceneEditorHandle, SceneEditorProps>(function Sce
     setDoc,
     setSelectedIds,
   })
+
+  // The Try asking prompts live in the Duet panel, so on a first visit the
+  // panel opens itself -- otherwise a judge who does not know what to type
+  // never finds them. Only when nothing has happened yet, so it stays out of
+  // the way afterwards.
+  useEffect(() => {
+    if (!ready) return
+    if (!isWebMcpAvailable() || hasActivity()) return
+    setEditorSidebarPanel('ai')
+  }, [ready])
 
   // A proposal nobody notices is the worst failure this feature has: the agent
   // waits politely on a decision the person does not know they are being asked

@@ -1,4 +1,5 @@
 import { type Dispatch, type MutableRefObject, type SetStateAction, useEffect } from 'react'
+import { seedDocument } from '../../data/templates'
 import { idbGetDocument, idbPutDocument } from '../../lib/avnac-editor-idb'
 import {
   AVNAC_STORAGE_KEY,
@@ -72,8 +73,12 @@ export function useSceneDocumentLifecycle({
           nextDoc = null
         }
       }
+      // A judge opening the live URL with no agent attached should see a real
+      // design, not an empty rectangle. Reuses a template rather than
+      // authoring anything new.
+      const seeded = nextDoc ?? parseAvnacDocument(seedDocument())
       const base =
-        nextDoc ??
+        seeded ??
         createEmptyAvnacDocument(
           clampDimension(initialArtboardWidth, defaultArtboardW),
           clampDimension(initialArtboardHeight, defaultArtboardH),

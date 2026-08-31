@@ -1,7 +1,13 @@
 import { Cancel01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 
+import {
+  type ActivityEntry,
+  getSnapshot as getActivity,
+  getDroppedCount,
+  subscribe as subscribeActivity,
+} from '../lib/avnac-activity'
 import {
   dismissProposal,
   getSnapshot,
@@ -22,6 +28,13 @@ type Props = {
   open: boolean
   onClose: () => void
 }
+
+/** Must match the landing page's prompts exactly, or the two tell different stories. */
+export const TRY_ASKING = [
+  'Design a happy birthday flyer for my mum',
+  'Make these two bigger and line them up',
+  'Now make an Instagram story version',
+]
 
 const OUTCOME_COPY: Record<string, string> = {
   approved: 'You approved every change.',
@@ -50,8 +63,7 @@ function ReviewCard({ proposal }: { proposal: Proposal }) {
     const applicable = wanted.filter(c => alive.has(c.id))
 
     if (applicable.length > 0) {
-      // One commit, so the whole batch lands together and a single undo
-      // restores all of it.
+      // One commit, so the whole batch lands together.
       controller.updateEach(applicable.map(c => ({ id: c.id, patch: c.patch })))
     }
     settleProposal(missing)
@@ -61,8 +73,8 @@ function ReviewCard({ proposal }: { proposal: Proposal }) {
   const includedCount = proposal.changes.filter(c => c.included).length
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-b border-black/[0.06] px-3 py-2.5">
+    <div className="border-b border-black/[0.08] bg-violet-50/60">
+      <div className="px-3 py-2.5">
         <div className="text-[11px] font-semibold uppercase tracking-wide text-violet-700">
           {settled ? 'Reviewed' : 'The agent is proposing a change'}
         </div>
@@ -71,13 +83,13 @@ function ReviewCard({ proposal }: { proposal: Proposal }) {
         </p>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
+      <div className="max-h-[220px] overflow-y-auto px-3 pb-1">
         {proposal.changes.map(change => (
           <label
             key={change.id}
             className={[
-              'flex cursor-pointer items-start gap-2.5 rounded-xl px-2 py-2 text-[13px] leading-5',
-              settled ? 'cursor-default' : 'hover:bg-black/[0.04]',
+              'flex items-start gap-2.5 rounded-xl px-2 py-1.5 text-[13px] leading-5',
+              settled ? 'cursor-default' : 'cursor-pointer hover:bg-black/[0.04]',
               change.included ? 'text-neutral-800' : 'text-neutral-400 line-through',
             ].join(' ')}
           >
@@ -100,7 +112,7 @@ function ReviewCard({ proposal }: { proposal: Proposal }) {
       </div>
 
       {settled ? (
-        <div className="border-t border-black/[0.06] p-3">
+        <div className="p-3">
           <button
             type="button"
             className="w-full cursor-pointer rounded-full bg-neutral-900 px-4 py-2 text-[13px] font-semibold text-white hover:bg-neutral-700"
@@ -110,13 +122,13 @@ function ReviewCard({ proposal }: { proposal: Proposal }) {
           </button>
         </div>
       ) : (
-        <div className="space-y-2 border-t border-black/[0.06] p-3">
+        <div className="space-y-2 p-3">
           <input
             type="text"
             value={note}
             onChange={e => setLocalNote(e.target.value)}
             placeholder="Add a note back to the agent (optional)"
-            className="w-full rounded-xl border border-black/[0.1] px-3 py-2 text-[13px] outline-none placeholder:text-neutral-400 focus:border-violet-400"
+            className="w-full rounded-xl border border-black/[0.1] bg-white px-3 py-2 text-[13px] outline-none placeholder:text-neutral-400 focus:border-violet-400"
           />
           <div className="flex gap-2">
             <button
@@ -129,7 +141,7 @@ function ReviewCard({ proposal }: { proposal: Proposal }) {
             </button>
             <button
               type="button"
-              className="cursor-pointer rounded-full border border-black/[0.12] px-4 py-2 text-[13px] font-semibold text-neutral-800 hover:bg-black/[0.04]"
+              className="cursor-pointer rounded-full border border-black/[0.12] bg-white px-4 py-2 text-[13px] font-semibold text-neutral-800 hover:bg-black/[0.04]"
               onClick={() => decide(false)}
             >
               Reject all
@@ -141,22 +153,107 @@ function ReviewCard({ proposal }: { proposal: Proposal }) {
   )
 }
 
+function formatArgs(args: Record<string, unknown>): string {
+  const keys = Object.keys(args)
+  if (keys.length === 0) return '{ }'
+  const body = keys
+    .map(k => {
+      const v = args[k]
+      const text = typeof v === 'string' ? `"${v}"` : JSON.stringify(v)
+      return `${k}: ${text && text.length > 48 ? `${text.slice(0, 45)}…` : text}`
+    })
+    .join(', ')
+  return `{ ${body} }`
+}
+
+function ActivityRow({ entry }: { entry: ActivityEntry }) {
+  const time = new Date(entry.at).toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+  return (
+    <li className="border-b border-black/[0.05] px-3 py-2 last:border-b-0">
+      <div className="flex items-baseline gap-2">
+        <span
+          className={[
+            'font-mono text-[12px] font-semibold',
+            entry.ok ? 'text-violet-700' : 'text-amber-700',
+          ].join(' ')}
+        >
+          {entry.tool}
+        </span>
+        <span className="ml-auto shrink-0 font-mono text-[11px] text-neutral-400">
+          {entry.ms}ms · {time}
+        </span>
+      </div>
+      {/* The arguments are the point. A list of names reads as a progress
+          spinner; the arguments read as a machine doing specific work. */}
+      <div className="mt-0.5 break-words font-mono text-[11px] leading-4 text-neutral-500">
+        {formatArgs(entry.args)}
+      </div>
+      <div className="mt-1 break-words text-[12px] leading-4 text-neutral-600">{entry.preview}</div>
+    </li>
+  )
+}
+
+function TryAsking() {
+  const [copied, setCopied] = useState<string | null>(null)
+  useEffect(() => {
+    if (!copied) return
+    const t = window.setTimeout(() => setCopied(null), 1600)
+    return () => window.clearTimeout(t)
+  }, [copied])
+
+  return (
+    <div className="px-3 py-3">
+      <p className="text-[13px] leading-5 text-neutral-600">
+        This canvas is wired for AI agents. Open it in an agent that speaks WebMCP and try asking:
+      </p>
+      <ul className="mt-2.5 space-y-1.5">
+        {TRY_ASKING.map(prompt => (
+          <li key={prompt}>
+            <button
+              type="button"
+              className="w-full cursor-pointer rounded-xl border border-black/[0.08] bg-white px-3 py-2 text-left text-[13px] leading-5 text-neutral-800 transition hover:border-violet-300 hover:bg-violet-50"
+              onClick={() => {
+                void navigator.clipboard?.writeText(prompt).then(
+                  () => setCopied(prompt),
+                  () => setCopied(null),
+                )
+              }}
+            >
+              <span>{copied === prompt ? 'Copied' : prompt}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-[12px] leading-4 text-neutral-400">
+        Every tool the agent calls is listed here, with its arguments.
+      </p>
+    </div>
+  )
+}
+
 /**
  * The Duet panel: where the agent's work becomes reviewable.
  *
- * Currently holds the proposal review card. The tool-call activity log lands
- * here too, so this is deliberately a container rather than a proposal-only
- * component.
+ * Holds the proposal review card and the tool-call activity log. The log is the
+ * evidence that any of this is real -- a flyer appearing proves nothing on its
+ * own, since a canned animation looks the same.
  */
 export default function EditorDuetPanel({ open, onClose }: Props) {
   const proposal = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
+  const activity = useSyncExternalStore(subscribeActivity, getActivity, getActivity)
   if (!open) return null
+
+  const dropped = getDroppedCount()
 
   return (
     <div
       data-avnac-chrome
       className={[
-        'pointer-events-auto fixed z-40 flex max-h-[min(80dvh,620px)] w-[min(100vw-1.5rem,340px)] flex-col overflow-hidden rounded-3xl border border-black/[0.08] bg-white/95 backdrop-blur-md',
+        'pointer-events-auto fixed z-40 flex max-h-[min(82dvh,660px)] w-[min(100vw-1.5rem,340px)] flex-col overflow-hidden rounded-3xl border border-black/[0.08] bg-white/95 backdrop-blur-md',
         editorSidebarPanelLeftClass,
         editorSidebarPanelTopClass,
       ].join(' ')}
@@ -175,12 +272,28 @@ export default function EditorDuetPanel({ open, onClose }: Props) {
         </button>
       </div>
 
-      {proposal ? (
-        <ReviewCard proposal={proposal} />
+      {proposal ? <ReviewCard proposal={proposal} /> : null}
+
+      {activity.length === 0 ? (
+        proposal ? null : (
+          <TryAsking />
+        )
       ) : (
-        <div className="px-4 py-8 text-center text-[13px] leading-5 text-neutral-500">
-          When an agent proposes a change, it appears here for you to approve or reject before
-          anything is applied.
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-baseline justify-between px-3 pb-1 pt-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+              Tool calls
+            </span>
+            <span className="font-mono text-[11px] text-neutral-400">
+              {activity.length}
+              {dropped > 0 ? ` (+${dropped} older)` : ''}
+            </span>
+          </div>
+          <ul className="min-h-0 flex-1 overflow-y-auto" aria-label="Tool call history">
+            {activity.map(entry => (
+              <ActivityRow key={entry.id} entry={entry} />
+            ))}
+          </ul>
         </div>
       )}
     </div>

@@ -441,4 +441,15 @@ export function findTemplate(id: string): DuetTemplate | null {
   return DUET_TEMPLATES.find(t => t.id === key) ?? null
 }
 
+/**
+ * The document a brand-new canvas starts from.
+ *
+ * Someone opening the live URL with no agent attached should see a real design
+ * rather than an empty rectangle. Reuses a template instead of authoring
+ * anything separate.
+ */
+export function seedDocument(): AvnacDocument {
+  return (findTemplate('birthday') ?? DUET_TEMPLATES[0]).document
+}
+
 export const TEMPLATE_IDS = DUET_TEMPLATES.map(t => t.id)
