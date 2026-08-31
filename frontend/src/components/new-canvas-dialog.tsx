@@ -239,14 +239,14 @@ export default function NewCanvasDialog({ open, onClose }: NewCanvasDialogProps)
         </h2>
         <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-[var(--text-muted)]">
           {editorUnsupported
-            ? "Avnac's editor is not available on mobile devices yet. Open this app on a desktop or laptop to create a new canvas."
+            ? "Duet's editor is not available on mobile devices yet. Open this app on a desktop or laptop to create a new canvas."
             : 'Pick a preset or set a custom artboard size.'}
         </p>
 
         {editorUnsupported ? (
           <div className="mt-6">
             <a
-              href="https://github.com/akinloluwami/avnac"
+              href="https://github.com/Otitodev/duet"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex min-h-12 w-full items-center justify-center gap-2.5 rounded-full border border-[#f6c56a]/60 bg-[linear-gradient(135deg,#fff7d6_0%,#ffe8a3_48%,#ffd36f_100%)] px-6 py-3 text-[15px] font-semibold text-[#3f2a00] no-underline shadow-[0_12px_30px_rgba(245,179,54,0.22),inset_0_1px_0_rgba(255,255,255,0.72)] transition-transform duration-200 hover:-translate-y-0.5 hover:text-[#2f1f00]"

@@ -110,7 +110,7 @@ function CreatePage() {
               The editor is not available on mobile.
             </h1>
             <Text className="mx-auto mt-4 max-w-xl text-base leading-relaxed text-[var(--text-muted)] sm:text-lg">
-              Open Avnac on a desktop or laptop to create and edit files. You can still return to
+              Open Duet on a desktop or laptop to create and edit files. You can still return to
               your files from here.
             </Text>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">

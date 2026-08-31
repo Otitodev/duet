@@ -4,9 +4,9 @@ import {
   GeometricShapes02Icon,
   Image01Icon,
   TextBoldIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
-import { createFileRoute, Link } from "@tanstack/react-router";
+} from '@hugeicons/core-free-icons'
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react'
+import { createFileRoute } from '@tanstack/react-router'
 import {
   motion,
   useInView,
@@ -14,391 +14,414 @@ import {
   useScroll,
   useSpring,
   useTransform,
-} from "motion/react";
-import {
-  type CSSProperties,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import doodleSvgRaw from "../assets/doodle.svg?raw";
-import NewCanvasDialog from "../components/new-canvas-dialog";
-import { idbListDocuments } from "../lib/avnac-editor-idb";
+} from 'motion/react'
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import doodleSvgRaw from '../assets/doodle.svg?raw'
+import NewCanvasDialog from '../components/new-canvas-dialog'
+import { TRY_ASKING } from '../data/prompts'
+import { idbListDocuments } from '../lib/avnac-editor-idb'
 
-export const Route = createFileRoute("/")({ component: Landing });
+export const Route = createFileRoute('/')({ component: Landing })
 
 type Sticker = {
-  id: string;
-  src: string;
-  label: string;
-  rotation: number;
-  size: string;
+  id: string
+  src: string
+  label: string
+  rotation: number
+  size: string
   desktop: {
-    x: number;
-    y: number;
-  };
+    x: number
+    y: number
+  }
   mobile: {
-    x: number;
-    y: number;
-  };
-};
+    x: number
+    y: number
+  }
+  /** Where this lands when the agent tidies: two aligned columns, no rotation. */
+  tidyDesktop: {
+    x: number
+    y: number
+  }
+  tidyMobile: {
+    x: number
+    y: number
+  }
+}
 
 const initialStickers: Sticker[] = [
   {
-    id: "sunflower",
-    src: "/stickers/sunflower-badge.webp",
-    label: "Sunflower sticker",
+    id: 'sunflower',
+    src: '/stickers/sunflower-badge.webp',
+    label: 'Sunflower sticker',
     rotation: 6,
-    size: "clamp(5.6rem, 10.8vw, 8.8rem)",
+    size: 'clamp(5.6rem, 10.8vw, 8.8rem)',
     desktop: { x: 74, y: 12 },
     mobile: { x: 37, y: 15 },
+    tidyDesktop: { x: 78, y: 14 },
+    tidyMobile: { x: 70, y: 12 },
   },
   {
-    id: "star",
-    src: "/stickers/shooting-star-badge.webp",
-    label: "Shooting star sticker",
+    id: 'star',
+    src: '/stickers/shooting-star-badge.webp',
+    label: 'Shooting star sticker',
     rotation: -7,
-    size: "clamp(4.4rem, 8.8vw, 7.4rem)",
+    size: 'clamp(4.4rem, 8.8vw, 7.4rem)',
     desktop: { x: 9, y: 12 },
     mobile: { x: 7, y: 16 },
+    tidyDesktop: { x: 9, y: 14 },
+    tidyMobile: { x: 8, y: 12 },
   },
   {
-    id: "pineapple",
-    src: "/stickers/pineapple.webp",
-    label: "Pineapple sticker",
+    id: 'pineapple',
+    src: '/stickers/pineapple.webp',
+    label: 'Pineapple sticker',
     rotation: 7,
-    size: "clamp(5.4rem, 11.2vw, 9.1rem)",
+    size: 'clamp(5.4rem, 11.2vw, 9.1rem)',
     desktop: { x: 77, y: 70 },
     mobile: { x: 68, y: 74 },
+    tidyDesktop: { x: 78, y: 74 },
+    tidyMobile: { x: 70, y: 76 },
   },
   {
-    id: "donut",
-    src: "/stickers/donut.webp",
-    label: "Donut sticker",
+    id: 'donut',
+    src: '/stickers/donut.webp',
+    label: 'Donut sticker',
     rotation: -8,
-    size: "clamp(4.9rem, 9.6vw, 8rem)",
+    size: 'clamp(4.9rem, 9.6vw, 8rem)',
     desktop: { x: 16, y: 73 },
     mobile: { x: 8, y: 76 },
+    tidyDesktop: { x: 9, y: 74 },
+    tidyMobile: { x: 8, y: 76 },
   },
   {
-    id: "lollipop",
-    src: "/stickers/lollipop.webp",
-    label: "Lollipop sticker",
+    id: 'lollipop',
+    src: '/stickers/lollipop.webp',
+    label: 'Lollipop sticker',
     rotation: 12,
-    size: "clamp(4.1rem, 8vw, 6.5rem)",
+    size: 'clamp(4.1rem, 8vw, 6.5rem)',
     desktop: { x: 80, y: 45 },
     mobile: { x: 72, y: 15 },
+    tidyDesktop: { x: 78, y: 44 },
+    tidyMobile: { x: 70, y: 44 },
   },
   {
-    id: "leaf",
-    src: "/stickers/leaf.webp",
-    label: "Leaf sticker",
+    id: 'leaf',
+    src: '/stickers/leaf.webp',
+    label: 'Leaf sticker',
     rotation: -11,
-    size: "clamp(4rem, 7.8vw, 6.2rem)",
+    size: 'clamp(4rem, 7.8vw, 6.2rem)',
     desktop: { x: 11, y: 47 },
     mobile: { x: 40, y: 77 },
+    tidyDesktop: { x: 9, y: 44 },
+    tidyMobile: { x: 8, y: 44 },
   },
-];
+]
 
 type EssentialTool = {
-  name: string;
-  note: string;
-  icon: IconSvgElement;
-  accent: string;
-  accentSoft: string;
-};
+  name: string
+  note: string
+  icon: IconSvgElement
+  accent: string
+  accentSoft: string
+}
 
 const essentialTools: EssentialTool[] = [
   {
-    name: "Text",
-    note: "Type, hierarchy, and alignment.",
+    name: 'Text',
+    note: 'Type, hierarchy, and alignment.',
     icon: TextBoldIcon,
-    accent: "#ef8b74",
-    accentSoft: "rgba(239, 139, 116, 0.22)",
+    accent: '#ef8b74',
+    accentSoft: 'rgba(239, 139, 116, 0.22)',
   },
   {
-    name: "Shapes",
-    note: "Clean primitives for quick composition.",
+    name: 'Shapes',
+    note: 'Clean primitives for quick composition.',
     icon: GeometricShapes02Icon,
-    accent: "#f0a74b",
-    accentSoft: "rgba(240, 167, 75, 0.22)",
+    accent: '#f0a74b',
+    accentSoft: 'rgba(240, 167, 75, 0.22)',
   },
   {
-    name: "Images",
-    note: "Drop in assets and build around them.",
+    name: 'Images',
+    note: 'Drop in assets and build around them.',
     icon: Image01Icon,
-    accent: "#89a36f",
-    accentSoft: "rgba(137, 163, 111, 0.2)",
+    accent: '#89a36f',
+    accentSoft: 'rgba(137, 163, 111, 0.2)',
   },
   {
-    name: "Crop",
-    note: "Trim the frame without losing the energy.",
+    name: 'Crop',
+    note: 'Trim the frame without losing the energy.',
     icon: CropIcon,
-    accent: "#5d9bc7",
-    accentSoft: "rgba(93, 155, 199, 0.2)",
+    accent: '#5d9bc7',
+    accentSoft: 'rgba(93, 155, 199, 0.2)',
   },
   {
-    name: "Export",
-    note: "Push the final image out when it lands.",
+    name: 'Export',
+    note: 'Push the final image out when it lands.',
     icon: FileExportIcon,
-    accent: "#f17f8f",
-    accentSoft: "rgba(241, 127, 143, 0.18)",
+    accent: '#f17f8f',
+    accentSoft: 'rgba(241, 127, 143, 0.18)',
   },
-];
+]
 
-// const magicPromptExamples = [
-//   "Turn this into a bold festival flyer with tighter spacing.",
-//   "Rewrite the headline and make the layout feel more editorial.",
-//   "Give this poster a softer color story and cleaner rhythm.",
-// ];
-
-// const magicCapabilities = [
-//   {
-//     label: "First pass",
-//     title: "Start from a rough idea.",
-//     note: "Drop in a prompt and get a sharper direction before you start nudging the details.",
-//   },
-//   {
-//     label: "Rewrite",
-//     title: "Fix the words and the structure.",
-//     note: "Ask for punchier copy, better hierarchy, or a cleaner arrangement without leaving the canvas.",
-//   },
-//   {
-//     label: "Refine",
-//     title: "Keep iterating in place.",
-//     note: "Use Magic to push a layout further instead of starting over every time the vibe is slightly off.",
-//   },
-// ];
+const agentCapabilities = [
+  {
+    label: 'Before',
+    title: 'Agent control meant picking a vendor.',
+    note: "This editor could already be driven by an AI, but only by embedding one company's SDK, with an account, an API key and a hosted service in the loop.",
+  },
+  {
+    label: 'Now',
+    title: 'The tools live in the page.',
+    note: 'No SDK, no key, no vendor. Any agent that speaks WebMCP can use them the moment it opens the link, and the document never leaves your browser.',
+  },
+  {
+    label: 'And',
+    title: 'It proposes before it changes anything.',
+    note: 'Larger edits arrive as a ghosted preview you approve or reject, one change at a time. Nothing lands on your canvas until you say so.',
+  },
+]
 
 type DragState = {
-  mode: "drag" | "rotate";
-  id: string;
-  pointerId: number;
-  startClientX: number;
-  startClientY: number;
-  startLeft: number;
-  startTop: number;
-  startRotation: number;
-  centerX: number;
-  centerY: number;
-  startPointerAngle: number;
-  width: number;
-  height: number;
-};
+  mode: 'drag' | 'rotate'
+  id: string
+  pointerId: number
+  startClientX: number
+  startClientY: number
+  startLeft: number
+  startTop: number
+  startRotation: number
+  centerX: number
+  centerY: number
+  startPointerAngle: number
+  width: number
+  height: number
+}
 
 function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
+  return Math.min(Math.max(value, min), max)
 }
 
 function radiansToDegrees(value: number) {
-  return (value * 180) / Math.PI;
+  return (value * 180) / Math.PI
 }
 
 function useCompactHeroStickerLayout() {
   const [compact, setCompact] = useState(() =>
-    typeof window !== "undefined"
-      ? window.matchMedia("(max-width: 640px)").matches
-      : false,
-  );
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 640px)').matches : false,
+  )
 
   useEffect(() => {
-    const media = window.matchMedia("(max-width: 640px)");
-    const update = () => setCompact(media.matches);
-    update();
-    media.addEventListener?.("change", update);
-    return () => media.removeEventListener?.("change", update);
-  }, []);
+    const media = window.matchMedia('(max-width: 640px)')
+    const update = () => setCompact(media.matches)
+    update()
+    media.addEventListener?.('change', update)
+    return () => media.removeEventListener?.('change', update)
+  }, [])
 
-  return compact;
+  return compact
+}
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false)
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const update = () => setReduced(media.matches)
+    update()
+    media.addEventListener?.('change', update)
+    return () => media.removeEventListener?.('change', update)
+  }, [])
+  return reduced
 }
 
 function Landing() {
-  const navigate = Route.useNavigate();
-  const [newCanvasOpen, setNewCanvasOpen] = useState(false);
-  const [savedFileCount, setSavedFileCount] = useState<number | null>(null);
-  const [stickers, setStickers] = useState(initialStickers);
-  const [activeStickerId, setActiveStickerId] = useState<string | null>(null);
-  const [activeToolIndex, setActiveToolIndex] = useState(0);
-  const stickerLayerRef = useRef<HTMLDivElement | null>(null);
-  const toolsSectionRef = useRef<HTMLDivElement | null>(null);
-  const vectorsSectionRef = useRef<HTMLElement | null>(null);
-  const dragStateRef = useRef<DragState | null>(null);
-  const activeToolIndexRef = useRef(0);
-  const compactHeroStickerLayout = useCompactHeroStickerLayout();
+  const navigate = Route.useNavigate()
+  const [newCanvasOpen, setNewCanvasOpen] = useState(false)
+  const [savedFileCount, setSavedFileCount] = useState<number | null>(null)
+  const [stickers, setStickers] = useState(initialStickers)
+  const [activeStickerId, setActiveStickerId] = useState<string | null>(null)
+  // The hero's argument, made literal: the agent tidies the stickers into line,
+  // and you can grab any of them mid-flight and take it back.
+  const [heroTidy, setHeroTidy] = useState(false)
+  const [releasedStickers, setReleasedStickers] = useState<Set<string>>(() => new Set())
+  const prefersReducedMotion = usePrefersReducedMotion()
+  const [activeToolIndex, setActiveToolIndex] = useState(0)
+  const stickerLayerRef = useRef<HTMLDivElement | null>(null)
+  const toolsSectionRef = useRef<HTMLDivElement | null>(null)
+  const vectorsSectionRef = useRef<HTMLElement | null>(null)
+  const dragStateRef = useRef<DragState | null>(null)
+  const activeToolIndexRef = useRef(0)
+  const compactHeroStickerLayout = useCompactHeroStickerLayout()
+
+  useEffect(() => {
+    if (prefersReducedMotion) {
+      return
+    }
+    const first = window.setTimeout(() => setHeroTidy(true), 1400)
+    // Slow enough not to nag, frequent enough that someone arriving late
+    // still sees it happen.
+    const loop = window.setInterval(() => setHeroTidy(current => !current), 7000)
+    return () => {
+      window.clearTimeout(first)
+      window.clearInterval(loop)
+    }
+  }, [prefersReducedMotion])
   const vectorsInView = useInView(vectorsSectionRef, {
     once: true,
     amount: 0.35,
-  });
+  })
   const { scrollYProgress } = useScroll({
     target: toolsSectionRef,
-    offset: ["start start", "end end"],
-  });
+    offset: ['start start', 'end end'],
+  })
   const smoothToolsProgress = useSpring(scrollYProgress, {
     stiffness: 210,
     damping: 32,
     mass: 0.22,
-  });
+  })
   const trackX = useTransform(
     smoothToolsProgress,
     [0, 1],
-    ["0%", `-${((essentialTools.length - 1) * 100) / essentialTools.length}%`],
-  );
+    ['0%', `-${((essentialTools.length - 1) * 100) / essentialTools.length}%`],
+  )
 
   useEffect(() => {
-    let cancelled = false;
+    let cancelled = false
     void idbListDocuments()
-      .then((docs) => {
-        if (!cancelled) setSavedFileCount(docs.length);
+      .then(docs => {
+        if (!cancelled) setSavedFileCount(docs.length)
       })
       .catch(() => {
-        if (!cancelled) setSavedFileCount(null);
-      });
+        if (!cancelled) setSavedFileCount(null)
+      })
     return () => {
-      cancelled = true;
-    };
-  }, []);
+      cancelled = true
+    }
+  }, [])
 
-  useMotionValueEvent(smoothToolsProgress, "change", (latest) => {
+  useMotionValueEvent(smoothToolsProgress, 'change', latest => {
     const nextIndex = Math.min(
       essentialTools.length - 1,
-      Math.max(
-        0,
-        Math.round(latest * Math.max(essentialTools.length - 1, 1)),
-      ),
-    );
-    const previousIndex = activeToolIndexRef.current;
+      Math.max(0, Math.round(latest * Math.max(essentialTools.length - 1, 1))),
+    )
+    const previousIndex = activeToolIndexRef.current
     if (nextIndex === previousIndex) {
-      return;
+      return
     }
-    activeToolIndexRef.current = nextIndex;
-    setActiveToolIndex(nextIndex);
-  });
+    activeToolIndexRef.current = nextIndex
+    setActiveToolIndex(nextIndex)
+  })
 
-  const updateStickerPosition = useCallback((
-    stickerId: string,
-    clientX: number,
-    clientY: number,
-  ) => {
-    const layer = stickerLayerRef.current;
-    const dragState = dragStateRef.current;
-    if (!layer || !dragState || dragState.id !== stickerId) {
-      return;
-    }
+  const updateStickerPosition = useCallback(
+    (stickerId: string, clientX: number, clientY: number) => {
+      const layer = stickerLayerRef.current
+      const dragState = dragStateRef.current
+      if (!layer || !dragState || dragState.id !== stickerId) {
+        return
+      }
 
-    if (dragState.mode === "rotate") {
-      const pointerAngle = Math.atan2(
-        clientY - dragState.centerY,
-        clientX - dragState.centerX,
-      );
-      const rotation =
-        dragState.startRotation +
-        radiansToDegrees(pointerAngle - dragState.startPointerAngle);
+      if (dragState.mode === 'rotate') {
+        const pointerAngle = Math.atan2(clientY - dragState.centerY, clientX - dragState.centerX)
+        const rotation =
+          dragState.startRotation + radiansToDegrees(pointerAngle - dragState.startPointerAngle)
 
-      setStickers((current) =>
-        current.map((sticker) =>
-          sticker.id === stickerId ? { ...sticker, rotation } : sticker,
+        setStickers(current =>
+          current.map(sticker => (sticker.id === stickerId ? { ...sticker, rotation } : sticker)),
+        )
+        return
+      }
+
+      const layerRect = layer.getBoundingClientRect()
+      const positionKey = compactHeroStickerLayout ? 'mobile' : 'desktop'
+      const nextLeft = clamp(
+        dragState.startLeft + (clientX - dragState.startClientX),
+        0,
+        Math.max(layerRect.width - dragState.width, 0),
+      )
+      const nextTop = clamp(
+        dragState.startTop + (clientY - dragState.startClientY),
+        0,
+        Math.max(layerRect.height - dragState.height, 0),
+      )
+
+      setStickers(current =>
+        current.map(sticker =>
+          sticker.id === stickerId
+            ? {
+                ...sticker,
+                [positionKey]: {
+                  x: (nextLeft / Math.max(layerRect.width, 1)) * 100,
+                  y: (nextTop / Math.max(layerRect.height, 1)) * 100,
+                },
+              }
+            : sticker,
         ),
-      );
-      return;
-    }
-
-    const layerRect = layer.getBoundingClientRect();
-    const positionKey = compactHeroStickerLayout ? "mobile" : "desktop";
-    const nextLeft = clamp(
-      dragState.startLeft + (clientX - dragState.startClientX),
-      0,
-      Math.max(layerRect.width - dragState.width, 0),
-    );
-    const nextTop = clamp(
-      dragState.startTop + (clientY - dragState.startClientY),
-      0,
-      Math.max(layerRect.height - dragState.height, 0),
-    );
-
-    setStickers((current) =>
-      current.map((sticker) =>
-        sticker.id === stickerId
-          ? {
-              ...sticker,
-              [positionKey]: {
-                x: (nextLeft / Math.max(layerRect.width, 1)) * 100,
-                y: (nextTop / Math.max(layerRect.height, 1)) * 100,
-              },
-            }
-          : sticker,
-      ),
-    );
-  }, [compactHeroStickerLayout]);
+      )
+    },
+    [compactHeroStickerLayout],
+  )
 
   const endDrag = (pointerId: number, target: EventTarget | null) => {
     if (dragStateRef.current?.pointerId !== pointerId) {
-      return;
+      return
     }
 
     if (target instanceof HTMLElement && target.hasPointerCapture(pointerId)) {
-      target.releasePointerCapture(pointerId);
+      target.releasePointerCapture(pointerId)
     }
 
-    dragStateRef.current = null;
-    setActiveStickerId(null);
-  };
+    dragStateRef.current = null
+    setActiveStickerId(null)
+  }
 
   const openEditor = useCallback(() => {
     void (async () => {
       try {
-        const docs = await idbListDocuments();
-        setSavedFileCount(docs.length);
+        const docs = await idbListDocuments()
+        setSavedFileCount(docs.length)
         if (docs.length > 0) {
-          await navigate({ to: "/files" });
-          return;
+          await navigate({ to: '/files' })
+          return
         }
       } catch (err) {
-        console.error("[duet] could not list documents", err);
+        console.error('[duet] could not list documents', err)
       }
-      setNewCanvasOpen(true);
-    })();
-  }, [navigate]);
+      setNewCanvasOpen(true)
+    })()
+  }, [navigate])
 
-  const hasSavedFiles = (savedFileCount ?? 0) > 0;
-  const primaryCtaLabel = hasSavedFiles ? "Open files" : "Open editor";
+  const hasSavedFiles = (savedFileCount ?? 0) > 0
+  const primaryCtaLabel = hasSavedFiles ? 'Open files' : 'Open editor'
   const heroBody = hasSavedFiles
-    ? "You already have saved work in this browser. Open your files and keep editing."
-    : "Avnac is an open canvas for layouts, posters, and graphics.";
-  const activeTool = essentialTools[activeToolIndex];
-  const activeToolCount = String(activeToolIndex + 1).padStart(2, "0");
-  const totalToolCount = String(essentialTools.length).padStart(2, "0");
+    ? 'You have saved work in this browser. Open it and keep editing, or hand the canvas to an AI agent over WebMCP.'
+    : 'Duet is a design canvas any AI agent can operate, over WebMCP. No extension, no account, and nothing leaves your browser. It sees what you have selected, and proposes changes before applying them.'
+  const activeTool = essentialTools[activeToolIndex]
+  const activeToolCount = String(activeToolIndex + 1).padStart(2, '0')
+  const totalToolCount = String(essentialTools.length).padStart(2, '0')
   const toolsShellStyle = {
-    "--tool-count": essentialTools.length,
-    "--tool-accent": activeTool.accent,
-    "--tool-accent-soft": activeTool.accentSoft,
+    '--tool-count': essentialTools.length,
+    '--tool-accent': activeTool.accent,
+    '--tool-accent-soft': activeTool.accentSoft,
     minHeight: `${essentialTools.length * 68}vh`,
-  } as CSSProperties;
+  } as CSSProperties
   const doodleMarkup = useMemo(() => {
-    let pathIndex = 0;
+    let pathIndex = 0
 
     return doodleSvgRaw
-      .replace(/<\?xml[\s\S]*?\?>\s*/g, "")
+      .replace(/<\?xml[\s\S]*?\?>\s*/g, '')
       .replace(/<svg\b([^>]*)>/, (_match, attrs) => {
-        const cleanAttrs = attrs
-          .replace(/\swidth="[^"]*"/g, "")
-          .replace(/\sheight="[^"]*"/g, "");
+        const cleanAttrs = attrs.replace(/\swidth="[^"]*"/g, '').replace(/\sheight="[^"]*"/g, '')
         const withViewBox = /viewBox=/.test(cleanAttrs)
           ? cleanAttrs
-          : `${cleanAttrs} viewBox="0 0 1000 1000"`;
+          : `${cleanAttrs} viewBox="0 0 1000 1000"`
 
-        return `<svg${withViewBox}>`;
+        return `<svg${withViewBox}>`
       })
-      .replace(
-        /<path\b([^>]*?)fill="([^"]+)"([^>]*)\/>/g,
-        (_match, before, fill, after) => {
-          const nextIndex = pathIndex++;
+      .replace(/<path\b([^>]*?)fill="([^"]+)"([^>]*)\/>/g, (_match, before, fill, after) => {
+        const nextIndex = pathIndex++
 
-          return `<path${before}fill="${fill}"${after} pathLength="1" style="--path-index:${nextIndex}; --path-fill:${fill};" />`;
-        },
-      );
-  }, []);
+        return `<path${before}fill="${fill}"${after} pathLength="1" style="--path-index:${nextIndex}; --path-fill:${fill};" />`
+      })
+  }, [])
 
   return (
     <main className="landing-page">
@@ -407,37 +430,68 @@ function Landing() {
         <div className="hero-bg-orb hero-bg-orb-b" aria-hidden="true" />
         <div className="hero-grid" aria-hidden="true" />
         <div ref={stickerLayerRef} className="hero-sticker-layer" aria-hidden="true">
-          {stickers.map((sticker) => (
+          {stickers.map(sticker =>
             (() => {
-              const pos = compactHeroStickerLayout
-                ? sticker.mobile
-                : sticker.desktop;
+              const own = compactHeroStickerLayout ? sticker.mobile : sticker.desktop
+              const released = releasedStickers.has(sticker.id)
+              const arranging = heroTidy && !released
+              const pos = arranging
+                ? compactHeroStickerLayout
+                  ? sticker.tidyMobile
+                  : sticker.tidyDesktop
+                : own
+              const rotation = arranging ? 0 : sticker.rotation
+              // Transitions rather than an animation loop: they keep working
+              // when the tab is backgrounded, and they cost nothing to cancel.
+              const glide =
+                !released && !prefersReducedMotion
+                  ? 'left 900ms cubic-bezier(0.22, 1, 0.36, 1), top 900ms cubic-bezier(0.22, 1, 0.36, 1), transform 900ms cubic-bezier(0.22, 1, 0.36, 1)'
+                  : undefined
 
               return (
                 <div
                   key={sticker.id}
-                  className={`hero-sticker-frame ${activeStickerId === sticker.id ? "is-active" : ""}`}
+                  className={`hero-sticker-frame ${activeStickerId === sticker.id ? 'is-active' : ''}`}
                   style={{
                     left: `${pos.x}%`,
                     top: `${pos.y}%`,
                     width: sticker.size,
-                    transform: `rotate(${sticker.rotation}deg)`,
+                    transform: `rotate(${rotation}deg)`,
+                    transition: glide,
                     zIndex: activeStickerId === sticker.id ? 3 : 1,
                   }}
-                  onPointerDown={(e) => {
-                    const layer = stickerLayerRef.current;
+                  onPointerDown={e => {
+                    const layer = stickerLayerRef.current
                     if (!layer) {
-                      return;
+                      return
                     }
 
-                    const layerRect = layer.getBoundingClientRect();
-                    const stickerLeft =
-                      (pos.x / 100) * Math.max(layerRect.width, 1);
-                    const stickerTop =
-                      (pos.y / 100) * Math.max(layerRect.height, 1);
+                    // Taking hold of a sticker hands it back for good. Commit
+                    // whatever position it is currently showing first, so it
+                    // never snaps out from under the cursor.
+                    if (!released) {
+                      setStickers(current =>
+                        current.map(item =>
+                          item.id === sticker.id
+                            ? compactHeroStickerLayout
+                              ? { ...item, mobile: { ...pos }, rotation }
+                              : { ...item, desktop: { ...pos }, rotation }
+                            : item,
+                        ),
+                      )
+                      setReleasedStickers(current => {
+                        const next = new Set(current)
+                        next.add(sticker.id)
+                        return next
+                      })
+                    }
+
+                    const layerRect = layer.getBoundingClientRect()
+                    const stickerLeft = (pos.x / 100) * Math.max(layerRect.width, 1)
+                    const stickerTop = (pos.y / 100) * Math.max(layerRect.height, 1)
 
                     dragStateRef.current = {
-                      mode: "drag",
+                      mode: 'drag',
                       id: sticker.id,
                       pointerId: e.pointerId,
                       startClientX: e.clientX,
@@ -454,37 +508,37 @@ function Landing() {
                       startPointerAngle: 0,
                       width: e.currentTarget.offsetWidth,
                       height: e.currentTarget.offsetHeight,
-                    };
-                    setActiveStickerId(sticker.id);
-                    e.currentTarget.setPointerCapture(e.pointerId);
+                    }
+                    setActiveStickerId(sticker.id)
+                    e.currentTarget.setPointerCapture(e.pointerId)
                   }}
-                  onPointerMove={(e) => {
-                    updateStickerPosition(sticker.id, e.clientX, e.clientY);
+                  onPointerMove={e => {
+                    updateStickerPosition(sticker.id, e.clientX, e.clientY)
                   }}
-                  onPointerUp={(e) => {
-                    endDrag(e.pointerId, e.target);
+                  onPointerUp={e => {
+                    endDrag(e.pointerId, e.target)
                   }}
-                  onPointerCancel={(e) => {
-                    endDrag(e.pointerId, e.target);
+                  onPointerCancel={e => {
+                    endDrag(e.pointerId, e.target)
                   }}
                 >
                   <span className="hero-sticker-selection" />
                   <span className="hero-sticker-handle hero-sticker-handle-nw" />
                   <span
                     className="hero-sticker-rotation-arm"
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      const frame = e.currentTarget.parentElement;
+                    onPointerDown={e => {
+                      e.stopPropagation()
+                      const frame = e.currentTarget.parentElement
                       if (!frame) {
-                        return;
+                        return
                       }
 
-                      const frameRect = frame.getBoundingClientRect();
-                      const centerX = frameRect.left + frameRect.width / 2;
-                      const centerY = frameRect.top + frameRect.height / 2;
+                      const frameRect = frame.getBoundingClientRect()
+                      const centerX = frameRect.left + frameRect.width / 2
+                      const centerY = frameRect.top + frameRect.height / 2
 
                       dragStateRef.current = {
-                        mode: "rotate",
+                        mode: 'rotate',
                         id: sticker.id,
                         pointerId: e.pointerId,
                         startClientX: e.clientX,
@@ -494,15 +548,12 @@ function Landing() {
                         startRotation: sticker.rotation,
                         centerX,
                         centerY,
-                        startPointerAngle: Math.atan2(
-                          e.clientY - centerY,
-                          e.clientX - centerX,
-                        ),
+                        startPointerAngle: Math.atan2(e.clientY - centerY, e.clientX - centerX),
                         width: frameRect.width,
                         height: frameRect.height,
-                      };
-                      setActiveStickerId(sticker.id);
-                      frame.setPointerCapture(e.pointerId);
+                      }
+                      setActiveStickerId(sticker.id)
+                      frame.setPointerCapture(e.pointerId)
                     }}
                   >
                     <span className="hero-sticker-rotation-handle" />
@@ -522,16 +573,16 @@ function Landing() {
                     draggable={false}
                   />
                 </div>
-              );
-            })()
-          ))}
+              )
+            })(),
+          )}
         </div>
         <div className="relative z-[1] mx-auto w-full max-w-3xl">
           <div className="rise-in text-left">
             <h1 className="display-title hero-headline mb-8 font-medium text-balance text-[var(--text)] sm:mb-10 lg:mb-12">
               Design in the browser,
               <br />
-              openly.
+              with an agent.
             </h1>
             <p className="mb-10 max-w-xl text-lg leading-[1.6] text-[var(--text-muted)] sm:mb-12 sm:text-xl sm:leading-[1.55] lg:text-[1.375rem] lg:leading-[1.5]">
               {heroBody}
@@ -544,30 +595,13 @@ function Landing() {
               >
                 {primaryCtaLabel}
               </button>
-              <Link
-                to="/studio"
-                className="inline-flex min-h-12 items-center justify-center rounded-full border border-black/[0.14] bg-white/85 px-8 py-3.5 text-base font-medium text-[var(--text)] no-underline backdrop-blur-sm hover:border-black/[0.22] hover:bg-white sm:min-h-14 sm:px-10 sm:py-4 sm:text-[1.0625rem]"
-              >
-                Avnac Studio
-              </Link>
               <a
-                href="https://github.com/akinloluwami/avnac"
+                href="https://github.com/Otitodev/duet"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex min-h-12 items-center justify-center rounded-full border border-black/[0.14] bg-white/70 px-8 py-3.5 text-base font-medium text-[var(--text)] no-underline backdrop-blur-sm hover:border-black/[0.22] hover:bg-white sm:min-h-14 sm:px-10 sm:py-4 sm:text-[1.0625rem]"
               >
                 GitHub
-              </a>
-            </div>
-            <div className="mt-5 flex flex-wrap items-center gap-3 text-sm text-[var(--text-muted)]">
-              <span>Duet is a fork of Avnac, licensed AGPL-3.0.</span>
-              <a
-                href="https://github.com/Otitodev/duet"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center rounded-full border border-black/[0.1] bg-white/70 px-4 py-2 font-medium text-[var(--text)] no-underline backdrop-blur-sm hover:border-black/[0.18] hover:bg-white"
-              >
-                Source
               </a>
             </div>
           </div>
@@ -576,17 +610,11 @@ function Landing() {
 
       <section className="landing-section">
         <div className="landing-container">
-          <motion.div
-            ref={toolsSectionRef}
-            className="landing-tools-shell"
-            style={toolsShellStyle}
-          >
+          <motion.div ref={toolsSectionRef} className="landing-tools-shell" style={toolsShellStyle}>
             <div className="landing-tools-sticky">
               <div className="landing-tools-header">
                 <div className="landing-tools-headline">
-                  <h2 className="display-title landing-tools-title">
-                    All the essential tools.
-                  </h2>
+                  <h2 className="display-title landing-tools-title">All the essential tools.</h2>
                 </div>
 
                 <div className="landing-tools-meter" aria-hidden="true">
@@ -610,22 +638,22 @@ function Landing() {
                   }}
                 >
                   {essentialTools.map((tool, index) => {
-                    const isActive = index === activeToolIndex;
+                    const isActive = index === activeToolIndex
 
                     return (
                       <article
                         key={tool.name}
-                        className={`landing-tools-panel ${isActive ? "is-active" : ""}`}
+                        className={`landing-tools-panel ${isActive ? 'is-active' : ''}`}
                         style={
                           {
-                            "--panel-accent": tool.accent,
+                            '--panel-accent': tool.accent,
                           } as CSSProperties
                         }
                       >
                         <div className="landing-tools-panel-grid">
                           <div className="landing-tools-panel-copy">
                             <span className="landing-tools-panel-count">
-                              {String(index + 1).padStart(2, "0")}
+                              {String(index + 1).padStart(2, '0')}
                             </span>
                             <h3 className="display-title">{tool.name}</h3>
                             <p>{tool.note}</p>
@@ -640,7 +668,7 @@ function Landing() {
                               opacity: isActive ? 1 : 0.7,
                             }}
                             transition={{
-                              type: "spring",
+                              type: 'spring',
                               stiffness: 360,
                               damping: 28,
                             }}
@@ -655,7 +683,7 @@ function Landing() {
                           </motion.div>
                         </div>
                       </article>
-                    );
+                    )
                   })}
                 </motion.div>
               </div>
@@ -664,7 +692,7 @@ function Landing() {
                 {essentialTools.map((tool, index) => (
                   <span
                     key={tool.name}
-                    className={`landing-tools-strip-item ${index === activeToolIndex ? "is-active" : ""}`}
+                    className={`landing-tools-strip-item ${index === activeToolIndex ? 'is-active' : ''}`}
                   >
                     {tool.name}
                   </span>
@@ -675,25 +703,17 @@ function Landing() {
         </div>
       </section>
 
-      <section
-        ref={vectorsSectionRef}
-        className="landing-section landing-vectors-section"
-      >
+      <section ref={vectorsSectionRef} className="landing-section landing-vectors-section">
         <div className="landing-container">
           <div className="landing-vectors-shell">
             <div className="landing-vectors-header">
-              <h2 className="display-title landing-vectors-title">
-                Vectors
-              </h2>
+              <h2 className="display-title landing-vectors-title">Vectors</h2>
               <p className="landing-vectors-copy">
-                Every curve stays sharp, editable, and clean as the drawing
-                comes to life.
+                Every curve stays sharp, editable, and clean as the drawing comes to life.
               </p>
             </div>
 
-            <div
-              className={`landing-vectors-stage ${vectorsInView ? "is-visible" : ""}`}
-            >
+            <div className={`landing-vectors-stage ${vectorsInView ? 'is-visible' : ''}`}>
               <div className="landing-vectors-paper">
                 <div className="landing-vectors-paper-clip" aria-hidden="true" />
                 <div
@@ -707,36 +727,34 @@ function Landing() {
         </div>
       </section>
 
-      {/*
       <section className="landing-section">
         <div className="landing-container">
           <div className="landing-magic-shell">
             <div className="landing-ai-header">
-              <h2 className="display-title landing-section-title">Magic</h2>
+              <h2 className="display-title landing-section-title">
+                Any agent can drive this canvas
+              </h2>
               <p className="landing-section-copy">
-                Prompt a first pass, rewrite the weak parts, or steer the
-                layout toward a better mood without breaking your flow.
+                Duet registers its tools with the browser through WebMCP. An agent that opens the
+                page can read what you have selected, restyle a layout, or resize the whole design,
+                running the app&rsquo;s own code on a document that never leaves your machine.
               </p>
             </div>
 
             <div className="landing-magic-grid">
               <div className="landing-magic-prompt-card">
-                <span className="landing-magic-prompt-label">
-                  Try prompts like
-                </span>
+                <span className="landing-magic-prompt-label">Try asking</span>
                 <div className="landing-ai-prompt-list">
-                  {magicPromptExamples.map((prompt) => (
+                  {TRY_ASKING.map(prompt => (
                     <span key={prompt}>{prompt}</span>
                   ))}
                 </div>
               </div>
 
               <div className="landing-magic-card-list">
-                {magicCapabilities.map((item) => (
+                {agentCapabilities.map(item => (
                   <article key={item.title} className="landing-magic-card">
-                    <span className="landing-magic-prompt-label">
-                      {item.label}
-                    </span>
+                    <span className="landing-magic-prompt-label">{item.label}</span>
                     <h3>{item.title}</h3>
                     <p>{item.note}</p>
                   </article>
@@ -746,15 +764,12 @@ function Landing() {
           </div>
         </div>
       </section>
-      */}
 
       <section className="landing-section landing-section-last">
         <div className="landing-container">
           <div className="landing-cta-band landing-cta-band-only">
             <div>
-              <h2 className="display-title landing-cta-title">
-                Start making something.
-              </h2>
+              <h2 className="display-title landing-cta-title">Start making something.</h2>
             </div>
 
             <div className="landing-cta-actions">
@@ -766,7 +781,7 @@ function Landing() {
                 Open editor
               </button>
               <a
-                href="https://github.com/akinloluwami/avnac"
+                href="https://github.com/Otitodev/duet"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex min-h-12 items-center justify-center rounded-full border border-black/[0.14] bg-white/72 px-8 py-3.5 text-base font-medium text-[var(--text)] no-underline backdrop-blur-sm hover:border-black/[0.22] hover:bg-white sm:min-h-14 sm:px-10 sm:py-4 sm:text-[1.0625rem]"
@@ -778,10 +793,34 @@ function Landing() {
         </div>
       </section>
 
-      <NewCanvasDialog
-        open={newCanvasOpen}
-        onClose={() => setNewCanvasOpen(false)}
-      />
+      <footer className="landing-container pb-16 pt-2 text-sm leading-6 text-[var(--text-muted)]">
+        <p className="flex flex-wrap items-center gap-x-2">
+          <span>
+            Duet is a fork of{' '}
+            <a
+              href="https://github.com/xt42io/avnac"
+              target="_blank"
+              rel="noreferrer"
+              className="underline decoration-dotted underline-offset-2"
+            >
+              Avnac
+            </a>
+            , licensed AGPL-3.0.
+          </span>
+          {/* AGPL section 13: anyone using the deployed instance is entitled
+              to its source, so this link must stay reachable. */}
+          <a
+            href="https://github.com/Otitodev/duet"
+            target="_blank"
+            rel="noreferrer"
+            className="underline decoration-dotted underline-offset-2"
+          >
+            Source
+          </a>
+        </p>
+      </footer>
+
+      <NewCanvasDialog open={newCanvasOpen} onClose={() => setNewCanvasOpen(false)} />
     </main>
-  );
+  )
 }

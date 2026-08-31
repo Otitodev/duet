@@ -1,7 +1,7 @@
 import { Cancel01Icon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useEffect, useState, useSyncExternalStore } from 'react'
-
+import { TRY_ASKING } from '../data/prompts'
 import {
   type ActivityEntry,
   getSnapshot as getActivity,
@@ -28,13 +28,6 @@ type Props = {
   open: boolean
   onClose: () => void
 }
-
-/** Must match the landing page's prompts exactly, or the two tell different stories. */
-export const TRY_ASKING = [
-  'Design a happy birthday flyer for my mum',
-  'Make these two bigger and line them up',
-  'Now make an Instagram story version',
-]
 
 const OUTCOME_COPY: Record<string, string> = {
   approved: 'You approved every change.',
