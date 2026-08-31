@@ -4,7 +4,11 @@ import type {
   AiObjectKind,
   AiObjectSummary,
 } from '../../lib/avnac-ai-controller'
-import { applyAiPatch, reflowObjectsForArtboard } from '../../lib/avnac-ai-transforms'
+import {
+  applyAiPatch,
+  reflowObjectsForArtboard,
+  remeasureTextObjects,
+} from '../../lib/avnac-ai-transforms'
 import {
   type AvnacDocument,
   clampTextLetterSpacing,
@@ -265,7 +269,7 @@ export function useAiDesignController({
           ...prev,
           artboard: { ...parsed.artboard },
           bg: parsed.bg,
-          objects: parsed.objects,
+          objects: remeasureTextObjects(parsed.objects),
         }))
         setSelectedIds([])
         return parsed.objects.length
@@ -294,14 +298,21 @@ export function useAiDesignController({
       },
 
       setObjectRole: (id, role) => {
-        if (!doc.objects.some(obj => obj.id === id)) return false
-        setDoc(prev => ({
-          ...prev,
-          objects: prev.objects.map(obj =>
-            obj.id === id ? { ...obj, role: role?.trim() || undefined } : obj,
-          ),
-        }))
-        return true
+        // Checked inside the updater rather than against the captured `doc`:
+        // an object added moments ago is not in `doc` yet, so an outer guard
+        // would silently drop the role.
+        let found = false
+        setDoc(prev => {
+          if (!prev.objects.some(obj => obj.id === id)) return prev
+          found = true
+          return {
+            ...prev,
+            objects: prev.objects.map(obj =>
+              obj.id === id ? { ...obj, role: role?.trim() || undefined } : obj,
+            ),
+          }
+        })
+        return found
       },
     }),
     [

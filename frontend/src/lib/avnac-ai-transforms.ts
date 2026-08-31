@@ -17,7 +17,7 @@ import {
 import { layoutSceneText, sceneTextLineHeight } from './avnac-scene-render'
 
 /** Recompute a text object's height after its text, size, or spacing changed. */
-function withMeasuredTextHeight(obj: SceneObject): SceneObject {
+export function withMeasuredTextHeight(obj: SceneObject): SceneObject {
   if (obj.type !== 'text') return obj
   return {
     ...obj,
@@ -52,6 +52,18 @@ export function applyAiPatch(obj: SceneObject, patch: AiUpdateSpec): SceneObject
     next = withMeasuredTextHeight(next)
   }
   return next
+}
+
+/**
+ * Re-measure every text object.
+ *
+ * Template JSON carries authored heights, which are guesses. Nothing else
+ * recomputes them on load -- `applyAiPatch` only fires on edits -- so without
+ * this pass a freshly applied template has subtly wrong text boxes until
+ * something happens to touch them.
+ */
+export function remeasureTextObjects(objects: readonly SceneObject[]): SceneObject[] {
+  return objects.map(o => (o.type === 'text' ? withMeasuredTextHeight(o) : o))
 }
 
 function scaleObject(obj: SceneObject, kx: number, ky: number): SceneObject {

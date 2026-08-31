@@ -149,8 +149,10 @@ import StrokeToolbarPopover from './stroke-toolbar-popover'
 import type { TextFormatToolbarValues } from './text-format-toolbar'
 import TransparencyToolbarPopover from './transparency-toolbar-popover'
 
-const DEFAULT_ARTBOARD_W = 4000
-const DEFAULT_ARTBOARD_H = 4000
+// Matches the template size (src/data/templates). A 4000x4000 default left a
+// first-time visitor staring at a huge empty square at 11% zoom.
+const DEFAULT_ARTBOARD_W = 1080
+const DEFAULT_ARTBOARD_H = 1350
 const ARTBOARD_ALIGN_PAD = 32
 const ZOOM_MIN_PCT = 5
 const ZOOM_MAX_PCT = 500
