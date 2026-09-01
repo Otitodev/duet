@@ -8,6 +8,7 @@
  */
 
 import type { MutableRefObject } from 'react'
+import { GOOGLE_FONT_FAMILIES } from '../data/google-font-families'
 import {
   DUET_TEMPLATES,
   findTemplate,
@@ -26,8 +27,10 @@ import type {
   AiDesignController,
   AiObjectSummary,
   AiReflowStrategy,
+  AiShadowSpec,
   AiUpdateSpec,
 } from './avnac-ai-controller'
+import { describePaint, parseAiPaint } from './avnac-ai-paint'
 import { type AnalysisObject, describeLayout } from './avnac-layout-analysis'
 import {
   awaitDecision,
@@ -85,8 +88,17 @@ function objectRow(map: AliasMap, o: AiObjectSummary, showRole: boolean): string
   const size = `${Math.round(o.width)}x${Math.round(o.height)}`.padEnd(11)
   const bits: string[] = []
   if (o.fontSize !== null) bits.push(`${Math.round(o.fontSize)}px`)
+  if (o.fontFamily) bits.push(o.fontFamily)
+  if (typeof o.fontWeight === 'number' && o.fontWeight !== 400) bits.push(`w${o.fontWeight}`)
+  if (o.textAlign && o.textAlign !== 'left') bits.push(o.textAlign)
   if (o.fill) bits.push(`fill ${o.fill}`)
-  if (o.stroke && o.stroke !== 'transparent') bits.push(`stroke ${o.stroke}`)
+  // A stroke colour with no width renders nothing, so report them together and
+  // never imply an outline exists when it is invisible.
+  if (o.strokeWidth > 0 && o.stroke && o.stroke !== 'transparent') {
+    bits.push(`stroke ${o.stroke} ${Math.round(o.strokeWidth)}px`)
+  }
+  if (o.cornerRadius > 0) bits.push(`radius ${Math.round(o.cornerRadius)}`)
+  if (o.hasShadow) bits.push('shadow')
   if (o.opacity < 1) bits.push(`opacity ${o.opacity.toFixed(2)}`)
   if (o.text) {
     // Newlines would break the one-object-per-line table, so show them as a
@@ -168,8 +180,164 @@ const FILTER_PROPERTIES = {
   },
 } as const
 
+/**
+ * Appearance properties every write tool accepts.
+ *
+ * Shared rather than repeated so `update_object`, `update_many` and
+ * `propose_changes` cannot drift apart in what they support -- the same reason
+ * `applyAiPatch` is shared between the single and batch paths.
+ *
+ * Geometry and `role` are deliberately absent: `update_many` uses `role` to
+ * select objects rather than to set it.
+ */
+const STYLE_PROPERTIES = {
+  fill: {
+    type: 'string',
+    description:
+      'Fill, as CSS. A colour ("#f59e0b", "rgb(2 6 23)", "transparent") or a gradient ' +
+      '("linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)"). Gradients are the fastest way ' +
+      'to make a flat template look designed - try one on the background object.',
+  },
+  stroke: {
+    type: 'string',
+    description:
+      'Outline paint, same CSS forms as fill. Has no visible effect on its own: set ' +
+      'strokeWidth as well, because objects start with a width of 0.',
+  },
+  strokeWidth: {
+    type: 'number',
+    description: 'Outline thickness in canvas pixels. 0 removes the outline.',
+  },
+  cornerRadius: {
+    type: 'number',
+    description: 'Rounded corners in canvas pixels. Rectangles and images only.',
+  },
+  opacity: { type: 'number', description: 'Opacity from 0 (invisible) to 1 (solid).' },
+  rotation: { type: 'number', description: 'Rotation in degrees, clockwise.' },
+  blur: {
+    type: 'number',
+    description: 'Blur strength from 0 (sharp) to 100. Good for softening a background image.',
+  },
+  shadow: {
+    type: ['object', 'null'],
+    description:
+      'Drop shadow. Pass null to remove one. Omitted fields keep their current value, so ' +
+      '{"blur": 40} alone gives a soft shadow at the default offset.',
+    properties: {
+      blur: { type: 'number', description: 'Shadow softness in pixels.' },
+      offsetX: { type: 'number', description: 'Horizontal offset in pixels.' },
+      offsetY: { type: 'number', description: 'Vertical offset in pixels.' },
+      color: { type: 'string', description: 'Six-digit hex, e.g. "#000000".' },
+      opacity: { type: 'number', description: 'Shadow opacity from 0 to 100.' },
+    },
+  },
+  text: { type: 'string', description: 'Text content. Only meaningful for text objects.' },
+  fontSize: { type: 'number', description: 'Font size in canvas pixels. Text objects only.' },
+  fontFamily: {
+    type: 'string',
+    description:
+      'Google font family name, e.g. "Fraunces", "Inter", "Playfair Display". Text objects ' +
+      'only. The font is loaded before the text is remeasured. Changing the display font is ' +
+      'the single biggest change you can make to how a design reads.',
+  },
+  fontWeight: {
+    type: 'number',
+    description: 'Font weight from 100 to 900. Text objects only. 700 is bold.',
+  },
+  fontStyle: {
+    type: 'string',
+    enum: ['normal', 'italic'],
+    description: 'Text objects only.',
+  },
+  textAlign: {
+    type: 'string',
+    enum: ['left', 'center', 'right', 'justify'],
+    description: 'Horizontal alignment inside the text box. Text objects only.',
+  },
+  letterSpacing: {
+    type: 'number',
+    description:
+      'Extra space between letters, in canvas pixels. Negative tightens. Large headlines ' +
+      'usually want a small negative value.',
+  },
+} as const
+
+/** The `shadow` argument, once checked. `null` means remove. */
+function readShadow(raw: unknown): AiShadowSpec | null | undefined {
+  if (raw === null) return null
+  if (typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const o = raw as Record<string, unknown>
+  const spec: AiShadowSpec = {}
+  if (typeof o.blur === 'number') spec.blur = o.blur
+  if (typeof o.offsetX === 'number') spec.offsetX = o.offsetX
+  if (typeof o.offsetY === 'number') spec.offsetY = o.offsetY
+  if (typeof o.color === 'string') spec.color = o.color
+  if (typeof o.opacity === 'number') spec.opacity = o.opacity
+  return spec
+}
+
+/** Read every STYLE_PROPERTIES value present in `args` into a patch. */
+function readStylePatch(args: Record<string, unknown>): Record<string, unknown> {
+  const patch: Record<string, unknown> = {}
+  if (typeof args.fill === 'string') patch.fill = args.fill
+  if (typeof args.stroke === 'string') patch.stroke = args.stroke
+  if (typeof args.strokeWidth === 'number') patch.strokeWidth = args.strokeWidth
+  if (typeof args.cornerRadius === 'number') patch.cornerRadius = args.cornerRadius
+  if (typeof args.opacity === 'number') patch.opacity = args.opacity
+  if (typeof args.rotation === 'number') patch.angle = args.rotation
+  if (typeof args.blur === 'number') patch.blurPct = args.blur
+  if ('shadow' in args) {
+    const shadow = readShadow(args.shadow)
+    if (shadow !== undefined) patch.shadow = shadow
+  }
+  if (typeof args.text === 'string') patch.text = args.text
+  if (typeof args.fontSize === 'number') patch.fontSize = args.fontSize
+  if (typeof args.fontFamily === 'string') patch.fontFamily = args.fontFamily
+  if (typeof args.fontWeight === 'number') patch.fontWeight = args.fontWeight
+  if (args.fontStyle === 'normal' || args.fontStyle === 'italic') patch.fontStyle = args.fontStyle
+  if (
+    args.textAlign === 'left' ||
+    args.textAlign === 'center' ||
+    args.textAlign === 'right' ||
+    args.textAlign === 'justify'
+  ) {
+    patch.textAlign = args.textAlign
+  }
+  if (typeof args.letterSpacing === 'number') patch.letterSpacing = args.letterSpacing
+  return patch
+}
+
+/**
+ * Resolve a requested font family against the families the editor knows, and
+ * load it.
+ *
+ * Applying an unloaded family measures the text in a fallback face, so the box
+ * ends up the wrong height and the design looks broken for reasons nothing
+ * reports. Returns an error message if the family is not one we have.
+ */
+async function ensurePatchFont(patch: Record<string, unknown>): Promise<string | null> {
+  const wanted = patch.fontFamily
+  if (typeof wanted !== 'string') return null
+  const match = GOOGLE_FONT_FAMILIES.find(f => f.toLowerCase() === wanted.trim().toLowerCase())
+  if (!match) {
+    return (
+      `"${wanted}" is not a font this editor has. Use a Google Fonts family name, ` +
+      'for example Inter, Fraunces, Playfair Display, Space Grotesk, Bebas Neue or Lora.'
+    )
+  }
+  patch.fontFamily = match
+  await ensureGoogleFontsForFamilies([match])
+  return null
+}
+
 /** How long check_proposal waits before reporting "still pending". */
 const DECISION_WAIT_MS = 20_000
+
+/** Gradients are long; the review card only has room for the ends. */
+function shortPaint(css: string): string {
+  const value = parseAiPaint(css)
+  return describePaint(value)
+}
 
 /** Describe a patch in the words a person would use, for the review card. */
 function summarisePatch(patch: Record<string, unknown>): string {
@@ -187,8 +355,17 @@ function summarisePatch(patch: Record<string, unknown>): string {
   if (w !== null && h !== null) bits.push(`resize to ${w}x${h}`)
   else if (w !== null) bits.push(`set width to ${w}`)
   else if (h !== null) bits.push(`set height to ${h}`)
-  if (typeof patch.fill === 'string') bits.push(`fill ${patch.fill}`)
-  if (typeof patch.stroke === 'string') bits.push(`outline ${patch.stroke}`)
+  if (typeof patch.fill === 'string') bits.push(`fill ${shortPaint(patch.fill)}`)
+  if (typeof patch.stroke === 'string') bits.push(`outline ${shortPaint(patch.stroke)}`)
+  if (typeof patch.strokeWidth === 'number') bits.push(`outline width ${patch.strokeWidth}`)
+  if (typeof patch.cornerRadius === 'number') bits.push(`corner radius ${patch.cornerRadius}`)
+  if (typeof patch.blurPct === 'number') bits.push(`blur ${Math.round(patch.blurPct)}%`)
+  if ('shadow' in patch) bits.push(patch.shadow === null ? 'remove shadow' : 'drop shadow')
+  if (typeof patch.fontFamily === 'string') bits.push(`font ${patch.fontFamily}`)
+  if (typeof patch.fontWeight === 'number') bits.push(`weight ${patch.fontWeight}`)
+  if (patch.fontStyle === 'italic') bits.push('italic')
+  if (typeof patch.textAlign === 'string') bits.push(`align ${patch.textAlign}`)
+  if (typeof patch.letterSpacing === 'number') bits.push(`letter spacing ${patch.letterSpacing}`)
   if (typeof patch.fontSize === 'number') bits.push(`${Math.round(patch.fontSize)}px`)
   if (typeof patch.opacity === 'number') bits.push(`opacity ${patch.opacity}`)
   if (typeof patch.angle === 'number') bits.push(`rotate ${Math.round(patch.angle)} degrees`)
@@ -349,24 +526,7 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
           y: { type: 'number', description: 'New top edge in canvas pixels, from the top.' },
           width: { type: 'number', description: 'New width in canvas pixels.' },
           height: { type: 'number', description: 'New height in canvas pixels.' },
-          fill: {
-            type: 'string',
-            description: 'New fill colour as CSS hex, e.g. "#f59e0b". Use "transparent" for none.',
-          },
-          stroke: { type: 'string', description: 'New outline colour as CSS hex.' },
-          text: {
-            type: 'string',
-            description: 'New text content. Only meaningful for text objects.',
-          },
-          fontSize: {
-            type: 'number',
-            description: 'New font size in canvas pixels. Only meaningful for text objects.',
-          },
-          opacity: {
-            type: 'number',
-            description: 'New opacity from 0 (invisible) to 1 (solid).',
-          },
-          rotation: { type: 'number', description: 'New rotation in degrees, clockwise.' },
+          ...STYLE_PROPERTIES,
           role: {
             type: 'string',
             description:
@@ -384,17 +544,11 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         const id = resolveAlias(map, raw)
         if (!id) return fail(unknownIdMessage(map, raw))
 
-        const patch: Record<string, unknown> = {}
+        const patch: Record<string, unknown> = readStylePatch(args)
         if (typeof args.x === 'number') patch.left = args.x
         if (typeof args.y === 'number') patch.top = args.y
         if (typeof args.width === 'number') patch.width = args.width
         if (typeof args.height === 'number') patch.height = args.height
-        if (typeof args.fill === 'string') patch.fill = args.fill
-        if (typeof args.stroke === 'string') patch.stroke = args.stroke
-        if (typeof args.text === 'string') patch.text = args.text
-        if (typeof args.fontSize === 'number') patch.fontSize = args.fontSize
-        if (typeof args.opacity === 'number') patch.opacity = args.opacity
-        if (typeof args.rotation === 'number') patch.angle = args.rotation
         if (typeof args.role === 'string') patch.role = args.role
 
         if (Object.keys(patch).length === 0) {
@@ -403,6 +557,9 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
               'such as fill, text, fontSize, x or y.',
           )
         }
+
+        const fontError = await ensurePatchFont(patch)
+        if (fontError) return fail(fontError)
 
         ref.current?.updateObject(id, patch)
         await settle()
@@ -508,16 +665,11 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
           y: { type: 'number', description: 'Top edge in canvas pixels, from the top.' },
           width: { type: 'number', description: 'Width in canvas pixels.' },
           height: { type: 'number', description: 'Height in canvas pixels. Ignored for text.' },
-          text: { type: 'string', description: 'Content, when adding text.' },
-          fontSize: {
-            type: 'number',
-            description: 'Font size in canvas pixels, when adding text.',
-          },
-          fill: { type: 'string', description: 'Fill colour as CSS hex, e.g. "#f59e0b".' },
           url: {
             type: 'string',
             description: 'Image source, when adding an image: an https URL or a data: URI.',
           },
+          ...STYLE_PROPERTIES,
           role: {
             type: 'string',
             description:
@@ -563,6 +715,18 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         if (!created) return fail(`The ${kind} could not be added.`)
         const newId = created.id
         await settle()
+
+        // Everything beyond position and fill is applied as a normal patch, so
+        // a new object reaches exactly the same styling as an existing one and
+        // the two paths cannot drift apart.
+        const style = readStylePatch(args)
+        if (Object.keys(style).length > 0) {
+          const fontError = await ensurePatchFont(style)
+          if (fontError) return fail(fontError)
+          ref.current?.updateObject(newId, style)
+          await settle()
+        }
+
         if (typeof args.role === 'string' && args.role.trim()) {
           // Deliberately after settle, and through a freshly read ref: the
           // controller captured before the add is a render behind.
@@ -590,12 +754,7 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         type: 'object',
         properties: {
           ...FILTER_PROPERTIES,
-          text: { type: 'string', description: 'New text content for every matched text object.' },
-          fill: { type: 'string', description: 'New fill colour as CSS hex, e.g. "#f59e0b".' },
-          stroke: { type: 'string', description: 'New outline colour as CSS hex.' },
-          fontSize: { type: 'number', description: 'New font size in canvas pixels.' },
-          opacity: { type: 'number', description: 'New opacity from 0 to 1.' },
-          rotation: { type: 'number', description: 'New rotation in degrees, clockwise.' },
+          ...STYLE_PROPERTIES,
           role: {
             type: 'string',
             description:
@@ -618,19 +777,17 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
           )
         }
 
-        const patch: Record<string, unknown> = {}
-        if (typeof args.text === 'string') patch.text = args.text
-        if (typeof args.fill === 'string') patch.fill = args.fill
-        if (typeof args.stroke === 'string') patch.stroke = args.stroke
-        if (typeof args.fontSize === 'number') patch.fontSize = args.fontSize
-        if (typeof args.opacity === 'number') patch.opacity = args.opacity
-        if (typeof args.rotation === 'number') patch.angle = args.rotation
+        const patch: Record<string, unknown> = readStylePatch(args)
         if (Object.keys(patch).length === 0) {
           return fail(
-            'Nothing to change. Pass at least one of: text, fill, stroke, fontSize, opacity, ' +
-              'rotation. Note that "role" selects objects here rather than changing them.',
+            'Nothing to change. Pass at least one appearance property, such as text, fill, ' +
+              'fontSize, fontFamily or cornerRadius. Note that "role" selects objects here ' +
+              'rather than changing them.',
           )
         }
+
+        const fontError = await ensurePatchFont(patch)
+        if (fontError) return fail(fontError)
 
         const ids = result.matched.map(o => o.id)
         const changed = ref.current?.updateMany(ids, patch) ?? 0
@@ -924,12 +1081,7 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
                 y: { type: 'number', description: 'New top edge in canvas pixels.' },
                 width: { type: 'number', description: 'New width in canvas pixels.' },
                 height: { type: 'number', description: 'New height in canvas pixels.' },
-                fill: { type: 'string', description: 'New fill colour as CSS hex.' },
-                stroke: { type: 'string', description: 'New outline colour as CSS hex.' },
-                text: { type: 'string', description: 'New text content, for text objects.' },
-                fontSize: { type: 'number', description: 'New font size in canvas pixels.' },
-                opacity: { type: 'number', description: 'New opacity from 0 to 1.' },
-                rotation: { type: 'number', description: 'New rotation in degrees, clockwise.' },
+                ...STYLE_PROPERTIES,
               },
               required: ['id'],
             },
@@ -937,7 +1089,7 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         },
         required: ['rationale', 'changes'],
       },
-      execute: args => {
+      execute: async args => {
         const scene = readScene(ref)
         if (!scene) return fail(NOT_READY)
         if (hasOpenProposal()) {
@@ -968,18 +1120,16 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
             unknown.push(asked || '(missing id)')
             continue
           }
-          const patch: Record<string, unknown> = {}
+          const patch: Record<string, unknown> = readStylePatch(entry)
           if (typeof entry.x === 'number') patch.left = entry.x
           if (typeof entry.y === 'number') patch.top = entry.y
           if (typeof entry.width === 'number') patch.width = entry.width
           if (typeof entry.height === 'number') patch.height = entry.height
-          if (typeof entry.fill === 'string') patch.fill = entry.fill
-          if (typeof entry.stroke === 'string') patch.stroke = entry.stroke
-          if (typeof entry.text === 'string') patch.text = entry.text
-          if (typeof entry.fontSize === 'number') patch.fontSize = entry.fontSize
-          if (typeof entry.opacity === 'number') patch.opacity = entry.opacity
-          if (typeof entry.rotation === 'number') patch.angle = entry.rotation
           if (Object.keys(patch).length === 0) continue
+          // Ghosts are measured as soon as they render, so a proposed font has
+          // to be loaded before the preview, not on approval.
+          const fontError = await ensurePatchFont(patch)
+          if (fontError) return fail(fontError)
           changes.push({
             id,
             alias: aliasFor(scene.map, id),
@@ -1054,6 +1204,110 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         const report = reportProposal(settled)
         if (settled.status === 'pending' || !after) return ok(report)
         return ok([report, '', formatScene(after)].join('\n'))
+      },
+    },
+
+    {
+      name: 'set_background',
+      description:
+        'Set the canvas background behind every object. Accepts a CSS colour or a CSS ' +
+        'linear-gradient, e.g. "#0f172a" or "linear-gradient(160deg, #1e1b4b 0%, #7c3aed 100%)". ' +
+        'Note that templates also carry a full-bleed background RECTANGLE sitting on top of ' +
+        'this, so when a template is loaded you usually want to change that object instead, ' +
+        'with update_many({ role: "background", fill: ... }). Call get_scene first and look ' +
+        'for an object with the background role.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          paint: {
+            type: 'string',
+            description:
+              'A CSS colour or linear-gradient. Gradients take an angle and any number of ' +
+              'stops: "linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)".',
+          },
+        },
+        required: ['paint'],
+      },
+      execute: async args => {
+        const controller = ref.current
+        if (!controller) return fail(NOT_READY)
+        const paint = typeof args.paint === 'string' ? args.paint.trim() : ''
+        if (!paint) return fail('Give a "paint" value: a CSS colour or a linear-gradient.')
+
+        controller.setBackground(paint)
+        await settle()
+        const after = readScene(ref)
+        const head = `Canvas background is now ${describePaint(parseAiPaint(paint))}.`
+        if (!after) return ok(head)
+        // The canvas background is invisible under a template, so say so rather
+        // than letting the agent believe a change landed that nobody can see.
+        const covering = after.canvas.objects.find(o => o.role === 'background')
+        const note = covering
+          ? ` Note that ${aliasFor(after.map, covering.id)} still covers the whole canvas, so ` +
+            'this is not visible until that object changes too.'
+          : ''
+        return ok([head + note, '', formatScene(after)].join('\n'))
+      },
+    },
+
+    {
+      name: 'export_design',
+      description:
+        'Render the finished design and hand the person the image file. Use this when they ask ' +
+        'to save, download or export. The file goes straight to their downloads and is NOT ' +
+        'returned to you: an image this size would be tens of thousands of tokens and of no ' +
+        'use to you. Worth calling describe_layout first, since exporting is usually the last ' +
+        'step and a defect is cheaper to fix before it is saved.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          format: {
+            type: 'string',
+            enum: ['png', 'jpg', 'webp'],
+            description:
+              'Image format. PNG is the safe default and the only one keeping transparency.',
+          },
+          scale: {
+            type: 'number',
+            description:
+              'Resolution multiplier, 1 to 4. 1 exports at the canvas size; 2 is the right ' +
+              'choice for print or a retina screen.',
+          },
+          transparent: {
+            type: 'boolean',
+            description:
+              'Drop the canvas background so the image has none. PNG and WebP only, and only ' +
+              'visible when no full-bleed background object covers the canvas.',
+          },
+          file_name: {
+            type: 'string',
+            description: 'Name for the file, without an extension. Defaults to "duet-design".',
+          },
+        },
+        required: [],
+      },
+      execute: async args => {
+        const controller = ref.current
+        if (!controller) return fail(NOT_READY)
+        const format =
+          args.format === 'jpg' || args.format === 'webp' ? args.format : ('png' as const)
+        const scale =
+          typeof args.scale === 'number' ? Math.max(1, Math.min(4, Math.round(args.scale))) : 1
+        const askedTransparent = args.transparent === true
+        const transparent = askedTransparent && format !== 'jpg'
+        const fileName = typeof args.file_name === 'string' ? args.file_name : undefined
+
+        const written = await controller.exportImage({ format, scale, transparent, fileName })
+        if (!written) return fail('The canvas could not be rendered, so nothing was exported.')
+        const caveat =
+          askedTransparent && format === 'jpg'
+            ? ' JPG cannot hold transparency, so the background was kept.'
+            : ''
+        return ok(
+          `Exported ${written.fileName} at ${written.width}x${written.height} pixels, ` +
+            'downloaded to their device.' +
+            caveat,
+        )
       },
     },
   ]

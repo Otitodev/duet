@@ -2588,6 +2588,7 @@ const SceneEditor = forwardRef<SceneEditorHandle, SceneEditorProps>(function Sce
     selectedIds,
     setDoc,
     setSelectedIds,
+    vectorBoardDocs,
   })
 
   // The Try asking prompts live in the Duet panel, so on a first visit the

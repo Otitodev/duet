@@ -30,7 +30,7 @@ Duet removes that layer entirely and replaces it with an open browser standard. 
 
 **Added**
 
-- A WebMCP tool layer — fourteen tools registered through `document.modelContext`, plus an entry tool on every other route so an agent handed the bare link can find them
+- A WebMCP tool layer — sixteen tools registered through `document.modelContext`, plus an entry tool on every other route so an agent handed the bare link can find them
 - A template system, so the agent starts from a hand-authored layout instead of composing by coordinate
 - Semantic `role` tags on objects (`headline`, `subhead`, `accent`, …) so an agent can address things by meaning rather than position
 - Readable object ids (`text_1`, `rect_2`) at the tool boundary, without rewriting any upstream id
@@ -65,6 +65,14 @@ Duet removes that layer entirely and replaces it with an open browser standard. 
 | `delete_objects` | Remove objects |
 | `resize_canvas` | Change the canvas, reflowing by `scale`, `fit` or `keep_positions` |
 | `select_objects` | Highlight objects in the person's editor |
+| `set_background` | Recolour the canvas behind everything, solid or gradient |
+| `export_design` | Render the design and hand the person the file |
+
+Anything that takes a colour takes a **CSS gradient** in the same field, so
+`fill: "linear-gradient(135deg, #f59e0b 0%, #ef4444 100%)"` works everywhere a hex does. The same
+write tools also carry `strokeWidth`, `cornerRadius`, `blur`, `shadow`, `fontFamily`, `fontWeight`,
+`fontStyle`, `textAlign` and `letterSpacing` — shared from one schema fragment, so a single edit, a
+batch edit and a proposal can never support different things.
 
 **Asking permission**
 

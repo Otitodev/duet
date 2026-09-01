@@ -41,6 +41,18 @@ export type AiObjectSummary = {
   opacity: number
   /** Hidden objects are skipped by layout analysis -- nobody can see them. */
   visible: boolean
+  /** Outline thickness. A stroke colour with width 0 renders nothing. */
+  strokeWidth: number
+  /** Rounded corners. Rectangles and images only, 0 elsewhere. */
+  cornerRadius: number
+  /** Text objects only. */
+  fontFamily: string | null
+  /** Text objects only. */
+  fontWeight: number | 'normal' | 'bold' | null
+  /** Text objects only. */
+  textAlign: string | null
+  /** Whether a drop shadow is set. */
+  hasShadow: boolean
 }
 
 export type AiCanvasInfo = {
@@ -128,6 +140,32 @@ export type AiUpdateSpec = {
   letterSpacing?: number
   /** Semantic template slot. Empty string clears it. */
   role?: string
+
+  /** Rounded corners, in canvas pixels. Rectangles and images only. */
+  cornerRadius?: number
+  /** Backdrop blur, 0-100. */
+  blurPct?: number
+  /** Text only. Must be a Google font family the editor knows. */
+  fontFamily?: string
+  /** Text only. 100-900, or 'normal' / 'bold'. */
+  fontWeight?: number | 'normal' | 'bold'
+  /** Text only. */
+  fontStyle?: 'normal' | 'italic'
+  /** Text only. */
+  textAlign?: 'left' | 'center' | 'right' | 'justify'
+  /** Drop shadow, or null to remove it. */
+  shadow?: AiShadowSpec | null
+}
+
+/** A drop shadow as the tools express it. */
+export type AiShadowSpec = {
+  blur?: number
+  offsetX?: number
+  offsetY?: number
+  /** Six-digit hex. */
+  color?: string
+  /** 0-100. */
+  opacity?: number
 }
 
 export type AiDesignController = {
@@ -140,7 +178,18 @@ export type AiDesignController = {
   updateObject: (id: string, patch: AiUpdateSpec) => boolean
   deleteObject: (id: string) => boolean
   selectObjects: (ids: string[]) => number
-  setBackgroundColor: (color: string) => void
+  /** Canvas background. Accepts a CSS colour or a CSS linear-gradient. */
+  setBackground: (paint: string) => void
+  /**
+   * Render the active page and hand the file to the person as a download.
+   * Returns what was written, or null if the canvas is not ready.
+   */
+  exportImage: (opts: {
+    format: 'png' | 'jpg' | 'webp'
+    scale: number
+    transparent: boolean
+    fileName?: string
+  }) => Promise<{ fileName: string; width: number; height: number } | null>
   clearCanvas: () => number
 
   /** Ids the human currently has selected, in selection order. */

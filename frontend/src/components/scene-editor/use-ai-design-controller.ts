@@ -4,6 +4,7 @@ import type {
   AiObjectKind,
   AiObjectSummary,
 } from '../../lib/avnac-ai-controller'
+import { describePaint, parseAiPaint } from '../../lib/avnac-ai-paint'
 import {
   applyAiPatch,
   reflowObjectsForArtboard,
@@ -12,8 +13,10 @@ import {
 import {
   type AvnacDocument,
   clampTextLetterSpacing,
+  getObjectCornerRadius,
   getObjectFill,
   getObjectStroke,
+  getObjectStrokeWidth,
   objectDisplayName,
   objectSupportsFill,
   objectSupportsOutlineStroke,
@@ -22,8 +25,14 @@ import {
   type SceneObject,
   type SceneText,
 } from '../../lib/avnac-scene'
-import { layoutSceneText, sceneTextLineHeight } from '../../lib/avnac-scene-render'
+import {
+  layoutSceneText,
+  renderAvnacDocumentToDataUrl,
+  sceneTextLineHeight,
+} from '../../lib/avnac-scene-render'
+import type { VectorBoardDocument } from '../../lib/avnac-vector-board-document'
 import { angleFromPoints } from '../../scene-engine/primitives'
+import type { BgValue } from '../background-popover'
 
 type PlaceImageObject = (
   rawUrl: string,
@@ -45,9 +54,15 @@ type UseAiDesignControllerArgs = {
   selectedIds: string[]
   setDoc: Dispatch<SetStateAction<AvnacDocument>>
   setSelectedIds: Dispatch<SetStateAction<string[]>>
+  vectorBoardDocs: Record<string, VectorBoardDocument>
 }
 
 const AI_DEFAULT_STROKE = { type: 'solid', color: 'transparent' } as const
+
+/** Paint as a short string for the agent, or null when the object has none. */
+function paintLabel(value: BgValue | null): string | null {
+  return value ? describePaint(value) : null
+}
 
 function leftFromSpec(
   spec: { x?: number; origin?: 'center' | 'top-left' },
@@ -78,6 +93,7 @@ export function useAiDesignController({
   selectedIds,
   setDoc,
   setSelectedIds,
+  vectorBoardDocs,
 }: UseAiDesignControllerArgs) {
   return useMemo<AiDesignController>(
     () => ({
@@ -101,18 +117,20 @@ export function useAiDesignController({
           width: obj.width,
           height: obj.height,
           angle: obj.rotation,
-          fill: (() => {
-            const fill = objectSupportsFill(obj) ? getObjectFill(obj) : null
-            return fill?.type === 'solid' ? fill.color : null
-          })(),
-          stroke: (() => {
-            const stroke = objectSupportsOutlineStroke(obj) ? getObjectStroke(obj) : null
-            return stroke?.type === 'solid' ? stroke.color : null
-          })(),
+          // Gradients are described rather than dropped: reporting null for a
+          // gradient fill would tell the agent its own change did not land.
+          fill: paintLabel(objectSupportsFill(obj) ? getObjectFill(obj) : null),
+          stroke: paintLabel(objectSupportsOutlineStroke(obj) ? getObjectStroke(obj) : null),
           text: obj.type === 'text' ? obj.text : null,
           fontSize: obj.type === 'text' ? obj.fontSize : null,
           opacity: obj.opacity,
           visible: obj.visible,
+          strokeWidth: getObjectStrokeWidth(obj),
+          cornerRadius: getObjectCornerRadius(obj),
+          fontFamily: obj.type === 'text' ? obj.fontFamily : null,
+          fontWeight: obj.type === 'text' ? obj.fontWeight : null,
+          textAlign: obj.type === 'text' ? obj.textAlign : null,
+          hasShadow: obj.shadow !== null,
         })),
       }),
       addRectangle: spec => {
@@ -249,7 +267,31 @@ export function useAiDesignController({
         setSelectedIds(valid)
         return valid.length
       },
-      setBackgroundColor: color => setDoc(prev => ({ ...prev, bg: { type: 'solid', color } })),
+      setBackground: paint => setDoc(prev => ({ ...prev, bg: parseAiPaint(paint) })),
+      exportImage: async ({ format, scale, transparent, fileName }) => {
+        const { width, height } = doc.artboard
+        const url = await renderAvnacDocumentToDataUrl(doc, vectorBoardDocs, {
+          format,
+          multiplier: scale,
+          transparent,
+        })
+        const base = (fileName ?? 'duet-design')
+          .replace(/[^a-z0-9_-]+/gi, '-')
+          .replace(/^-+|-+$/g, '')
+        const name = `${base || 'duet-design'}.${format}`
+        // A download is the only honest way to return an image here: a
+        // 1080x1350 PNG as base64 is megabytes, and putting that in a tool
+        // result would flood the agent's context to no purpose.
+        const a = document.createElement('a')
+        a.href = url
+        a.download = name
+        a.click()
+        return {
+          fileName: name,
+          width: Math.round(width * scale),
+          height: Math.round(height * scale),
+        }
+      },
       clearCanvas: () => {
         const count = doc.objects.length
         setDoc(prev => ({ ...prev, objects: [] }))
@@ -347,6 +389,16 @@ export function useAiDesignController({
         return found
       },
     }),
-    [addObjects, artboardH, artboardW, doc, placeImageObject, selectedIds, setDoc, setSelectedIds],
+    [
+      addObjects,
+      artboardH,
+      artboardW,
+      doc,
+      placeImageObject,
+      selectedIds,
+      setDoc,
+      setSelectedIds,
+      vectorBoardDocs,
+    ],
   )
 }

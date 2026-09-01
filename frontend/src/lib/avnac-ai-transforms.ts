@@ -6,15 +6,18 @@
  * `components/scene-editor/use-ai-design-controller.ts` wires them to `setDoc`.
  */
 
-import type { AiReflowStrategy, AiUpdateSpec } from './avnac-ai-controller'
+import type { AiReflowStrategy, AiShadowSpec, AiUpdateSpec } from './avnac-ai-controller'
+import { parseAiPaint } from './avnac-ai-paint'
 import {
   clampTextLetterSpacing,
   type SceneObject,
+  setObjectCornerRadius,
   setObjectFill,
   setObjectStroke,
   setObjectStrokeWidth,
 } from './avnac-scene'
 import { layoutSceneText, sceneTextLineHeight } from './avnac-scene-render'
+import { DEFAULT_SHADOW_UI, type ShadowUi } from './avnac-shadow'
 
 /** Recompute a text object's height after its text, size, or spacing changed. */
 export function withMeasuredTextHeight(obj: SceneObject): SceneObject {
@@ -37,11 +40,14 @@ export function applyAiPatch(obj: SceneObject, patch: AiUpdateSpec): SceneObject
   if (patch.height !== undefined) next.height = patch.height
   if (patch.angle !== undefined) next.rotation = patch.angle
   if (patch.opacity !== undefined) next.opacity = Math.max(0, Math.min(1, patch.opacity))
-  if (patch.fill !== undefined) next = setObjectFill(next, { type: 'solid', color: patch.fill })
-  if (patch.stroke !== undefined) {
-    next = setObjectStroke(next, { type: 'solid', color: patch.stroke })
-  }
+  // Paint arrives as a CSS string and may be a gradient, so it goes through the
+  // parser rather than being assumed solid.
+  if (patch.fill !== undefined) next = setObjectFill(next, parseAiPaint(patch.fill))
+  if (patch.stroke !== undefined) next = setObjectStroke(next, parseAiPaint(patch.stroke))
   if (patch.strokeWidth !== undefined) next = setObjectStrokeWidth(next, patch.strokeWidth)
+  if (patch.cornerRadius !== undefined) next = setObjectCornerRadius(next, patch.cornerRadius)
+  if (patch.blurPct !== undefined) next.blurPct = Math.max(0, Math.min(100, patch.blurPct))
+  if (patch.shadow !== undefined) next.shadow = resolveShadow(next.shadow, patch.shadow)
   if (patch.role !== undefined) next.role = patch.role || undefined
   if (next.type === 'text') {
     if (patch.text !== undefined) next.text = patch.text
@@ -49,9 +55,37 @@ export function applyAiPatch(obj: SceneObject, patch: AiUpdateSpec): SceneObject
     if (patch.letterSpacing !== undefined) {
       next.letterSpacing = clampTextLetterSpacing(patch.letterSpacing)
     }
+    if (patch.fontFamily !== undefined) next.fontFamily = patch.fontFamily
+    if (patch.fontWeight !== undefined) next.fontWeight = clampFontWeight(patch.fontWeight)
+    if (patch.fontStyle !== undefined) next.fontStyle = patch.fontStyle
+    if (patch.textAlign !== undefined) next.textAlign = patch.textAlign
     next = withMeasuredTextHeight(next)
   }
   return next
+}
+
+function clampFontWeight(weight: number | 'normal' | 'bold'): number | 'normal' | 'bold' {
+  if (typeof weight !== 'number') return weight
+  return Math.max(100, Math.min(900, Math.round(weight / 100) * 100))
+}
+
+/**
+ * Merge a shadow patch onto whatever the object already had.
+ *
+ * `null` removes the shadow. A partial spec on an object with no shadow starts
+ * from the editor's own defaults, so `{ blur: 40 }` alone produces a visible
+ * shadow rather than an invisible one at zero offset.
+ */
+function resolveShadow(current: ShadowUi | null, patch: AiShadowSpec | null): ShadowUi | null {
+  if (patch === null) return null
+  const base = current ?? DEFAULT_SHADOW_UI
+  return {
+    blur: Math.max(0, patch.blur ?? base.blur),
+    offsetX: patch.offsetX ?? base.offsetX,
+    offsetY: patch.offsetY ?? base.offsetY,
+    colorHex: patch.color ?? base.colorHex,
+    opacityPct: Math.max(0, Math.min(100, patch.opacity ?? base.opacityPct)),
+  }
 }
 
 /**
