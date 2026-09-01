@@ -1005,10 +1005,15 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
     {
       name: 'resize_canvas',
       description:
-        'Change the canvas size and reflow what is on it. Common sizes: Instagram story or ' +
-        'reel 1080x1920, square post 1080x1080, portrait post 1080x1350, landscape 1920x1080. ' +
+        'Change the canvas size and reflow what is on it. Common sizes: Instagram story, reel or ' +
+        'TikTok 1080x1920, square post 1080x1080, portrait post 1080x1350, landscape 1920x1080. ' +
         'Choose the strategy deliberately - it decides whether the result still looks designed. ' +
-        'After a big aspect change, follow up with describe_layout to see what moved.',
+        'After a big aspect change, follow up with describe_layout to see what moved. ' +
+        'IMPORTANT when making several platform versions of one design: each resize transforms ' +
+        'whatever is on the canvas NOW, so chaining them compounds. Portrait to story to square ' +
+        'shrinks the design twice and leaves it as a narrow column stranded in the middle. ' +
+        'Return to the original size, or re-apply the source template, between versions - so ' +
+        'every export starts from the full-size design rather than the previous crop.',
       inputSchema: {
         type: 'object',
         properties: {
