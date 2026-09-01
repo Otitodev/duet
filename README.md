@@ -30,7 +30,7 @@ Duet removes that layer entirely and replaces it with an open browser standard. 
 
 **Added**
 
-- A WebMCP tool layer — eight tools registered through `document.modelContext`
+- A WebMCP tool layer — fourteen tools registered through `document.modelContext`, plus an entry tool on every other route so an agent handed the bare link can find them
 - A template system, so the agent starts from a hand-authored layout instead of composing by coordinate
 - Semantic `role` tags on objects (`headline`, `subhead`, `accent`, …) so an agent can address things by meaning rather than position
 - Readable object ids (`text_1`, `rect_2`) at the tool boundary, without rewriting any upstream id
@@ -44,16 +44,40 @@ Duet removes that layer entirely and replaces it with an open browser standard. 
 
 ## The tool surface
 
-| Tool | | What it is for |
-| --- | --- | --- |
-| `get_scene` | read | The whole design: canvas, every object, layer order |
-| `get_selection` | read | What the person has selected **right now** |
-| `list_templates` | read | The starting layouts available |
-| `apply_template` | write | Load a layout and return it ready to fill in |
-| `select_objects` | write | Highlight objects in the person's editor |
-| `add_object` | write | Add one element on top of what is there |
-| `update_object` | write | Change one object |
-| `update_many` | write | Change many objects in a single call |
+**Reading**
+
+| Tool | What it is for |
+| --- | --- |
+| `get_scene` | The whole design: canvas, every object, layer order |
+| `get_selection` | What the person has selected **right now** |
+| `list_templates` | The starting layouts available |
+| `describe_layout` | Overlaps, objects outside the frame, near-miss alignment, contrast failures |
+
+**Editing**
+
+| Tool | What it is for |
+| --- | --- |
+| `apply_template` | Load a layout and return it ready to fill in |
+| `add_object` | Add one element on top of what is there |
+| `update_object` | Change one object |
+| `update_many` | Change many objects in a single call |
+| `align_objects` | Align or distribute, in one commit |
+| `delete_objects` | Remove objects |
+| `resize_canvas` | Change the canvas, reflowing by `scale`, `fit` or `keep_positions` |
+| `select_objects` | Highlight objects in the person's editor |
+
+**Asking permission**
+
+| Tool | What it is for |
+| --- | --- |
+| `propose_changes` | Show a batch of edits as a ghosted preview and wait for a human |
+| `check_proposal` | Ask what the person decided, per change, with their note back |
+
+**Getting in**
+
+| Tool | What it is for |
+| --- | --- |
+| `open_design_editor` | Registered on every route *except* the editor. The design tools mount at `/create`, so an agent given the bare link would otherwise find an empty registry with no hint that a tool surface exists one route away |
 
 Every tool returns readable text describing the resulting state, and every failure returns an explanation rather than throwing — an unknown id comes back with the list of ids that do exist.
 
