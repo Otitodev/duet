@@ -1063,31 +1063,53 @@ export function sceneObjectToShapeMeta(obj: SceneObject): AvnacShapeMeta | null 
   }
 }
 
-export function objectSupportsOutlineStroke(obj: SceneObject): boolean {
+/*
+ * Capability checks by type name.
+ *
+ * The agent-facing tools only ever hold an object's `kind` as a string, not the
+ * object itself, and they need these answers to tell a person or an agent that a
+ * requested change cannot apply. Keeping the type lists here -- with the
+ * object-shaped predicates below delegating to them -- means there is one source
+ * of truth rather than a second copy that drifts.
+ */
+
+export function kindSupportsOutlineStroke(type: string): boolean {
   return (
-    obj.type === 'rect' ||
-    obj.type === 'ellipse' ||
-    obj.type === 'polygon' ||
-    obj.type === 'star' ||
-    obj.type === 'line' ||
-    obj.type === 'arrow' ||
-    obj.type === 'text'
+    type === 'rect' ||
+    type === 'ellipse' ||
+    type === 'polygon' ||
+    type === 'star' ||
+    type === 'line' ||
+    type === 'arrow' ||
+    type === 'text'
   )
+}
+
+export function kindSupportsFill(type: string): boolean {
+  return (
+    type === 'rect' ||
+    type === 'ellipse' ||
+    type === 'polygon' ||
+    type === 'star' ||
+    type === 'text' ||
+    type === 'icon'
+  )
+}
+
+export function kindSupportsCornerRadius(type: string): boolean {
+  return type === 'rect' || type === 'image'
+}
+
+export function objectSupportsOutlineStroke(obj: SceneObject): boolean {
+  return kindSupportsOutlineStroke(obj.type)
 }
 
 export function objectSupportsFill(obj: SceneObject): boolean {
-  return (
-    obj.type === 'rect' ||
-    obj.type === 'ellipse' ||
-    obj.type === 'polygon' ||
-    obj.type === 'star' ||
-    obj.type === 'text' ||
-    obj.type === 'icon'
-  )
+  return kindSupportsFill(obj.type)
 }
 
 export function objectSupportsCornerRadius(obj: SceneObject): boolean {
-  return obj.type === 'rect' || obj.type === 'image'
+  return kindSupportsCornerRadius(obj.type)
 }
 
 export function getObjectCornerRadius(obj: SceneObject): number {

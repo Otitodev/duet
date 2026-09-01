@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { describePaint, parseAiPaint, parseGradient } from '../lib/avnac-ai-paint'
 import { applyAiPatch } from '../lib/avnac-ai-transforms'
 import type { SceneObject, SceneRect, SceneText } from '../lib/avnac-scene'
+import { unappliedProperties, unappliedReason } from '../lib/avnac-webmcp-tools'
 
 const solidBlack = { type: 'solid' as const, color: '#000000' }
 const transparent = { type: 'solid' as const, color: 'transparent' }
@@ -181,5 +182,51 @@ describe('applyAiPatch styling', () => {
   it('leaves corner radius alone on a type that has none', () => {
     const ellipse = { ...rect(), type: 'ellipse' } as unknown as SceneObject
     expect(() => applyAiPatch(ellipse, { cornerRadius: 20 })).not.toThrow()
+  })
+})
+
+describe('reporting changes that cannot apply', () => {
+  it('drops paint properties on a vector board, which has none', () => {
+    const dropped = unappliedProperties('vector-board', { fill: '#f00', strokeWidth: 4 })
+    expect(dropped).toEqual(['fill', 'strokeWidth'])
+  })
+
+  it('drops corner radius on an ellipse but keeps fill', () => {
+    expect(unappliedProperties('ellipse', { cornerRadius: 20, fill: '#f00' })).toEqual([
+      'cornerRadius',
+    ])
+  })
+
+  it('drops fill on a line, which only has a stroke', () => {
+    expect(unappliedProperties('line', { fill: '#f00', stroke: '#00f' })).toEqual(['fill'])
+  })
+
+  it('drops typography on anything that is not text', () => {
+    expect(unappliedProperties('rect', { fontSize: 40, fontFamily: 'Inter', text: 'hi' })).toEqual([
+      'text',
+      'fontSize',
+      'fontFamily',
+    ])
+  })
+
+  it('drops nothing when the object supports everything asked for', () => {
+    expect(unappliedProperties('text', { fill: '#f00', fontSize: 40, stroke: '#00f' })).toEqual([])
+    expect(unappliedProperties('rect', { fill: '#f00', cornerRadius: 8 })).toEqual([])
+  })
+
+  it('never drops properties every object has', () => {
+    const patch = { left: 1, top: 2, width: 3, height: 4, opacity: 0.5, blurPct: 10, shadow: null }
+    expect(unappliedProperties('vector-board', patch)).toEqual([])
+    expect(unappliedProperties('group', patch)).toEqual([])
+  })
+
+  it('explains a vector board in its own terms rather than naming a property', () => {
+    expect(unappliedReason('vector-board', ['fill'])).toContain('no editable paint')
+  })
+
+  it('names the single property when an ordinary object cannot take it', () => {
+    expect(unappliedReason('ellipse', ['cornerRadius'])).toBe(
+      'cornerRadius was ignored: an ellipse object has no cornerRadius.',
+    )
   })
 })

@@ -40,6 +40,11 @@ import {
   openProposal,
   type Proposal,
 } from './avnac-proposals'
+import {
+  kindSupportsCornerRadius,
+  kindSupportsFill,
+  kindSupportsOutlineStroke,
+} from './avnac-scene'
 import { type AvnacUpload, ensureUploadsLoaded, getUploads, uploadAlias } from './avnac-uploads'
 import { ensureUserTemplatesLoaded } from './avnac-user-templates'
 import { fail, guarded, ok, type WebMcpTool } from './avnac-webmcp'
@@ -336,6 +341,61 @@ async function ensurePatchFont(patch: Record<string, unknown>): Promise<string |
 /** How long check_proposal waits before reporting "still pending". */
 const DECISION_WAIT_MS = 20_000
 
+/**
+ * Properties in a patch that this kind of object cannot accept.
+ *
+ * The scene setters are deliberately forgiving: setObjectFill on a vector board
+ * returns the object untouched rather than throwing. That is right for the
+ * editor and wrong for an agent, which would otherwise be told "Updated" and
+ * shown an unchanged canvas -- a success message for something that did not
+ * happen, with nothing anywhere to reveal it.
+ *
+ * So every write tool asks this first and says what it had to drop.
+ */
+export function unappliedProperties(kind: string, patch: Record<string, unknown>): string[] {
+  const dropped: string[] = []
+  const isText = kind === 'text'
+
+  if ('fill' in patch && !kindSupportsFill(kind)) dropped.push('fill')
+  if ('stroke' in patch && !kindSupportsOutlineStroke(kind)) dropped.push('stroke')
+  if ('strokeWidth' in patch && !kindSupportsOutlineStroke(kind)) dropped.push('strokeWidth')
+  if ('cornerRadius' in patch && !kindSupportsCornerRadius(kind)) dropped.push('cornerRadius')
+
+  for (const property of TEXT_ONLY_PROPERTIES) {
+    if (property in patch && !isText) dropped.push(property)
+  }
+  return dropped
+}
+
+/** Patch keys that only mean anything on a text object. */
+const TEXT_ONLY_PROPERTIES = [
+  'text',
+  'fontSize',
+  'fontFamily',
+  'fontWeight',
+  'fontStyle',
+  'textAlign',
+  'letterSpacing',
+] as const
+
+/** "a rect" but "an ellipse". This text is quoted back by agents and logged. */
+function article(word: string): string {
+  return /^[aeiou]/i.test(word) ? 'an' : 'a'
+}
+
+/** Why those properties were dropped, in words the agent can act on. */
+export function unappliedReason(kind: string, dropped: string[]): string {
+  const list = dropped.join(', ')
+  const plural = dropped.length > 1 ? 'were' : 'was'
+  const hint =
+    kind === 'vector-board' || kind === 'group'
+      ? `${article(kind)} ${kind} has no editable paint or type of its own`
+      : `${article(kind)} ${kind} object has no ${
+          dropped.length > 1 ? 'such properties' : dropped[0]
+        }`
+  return `${list} ${plural} ignored: ${hint}.`
+}
+
 /** Resolve an upload alias or raw id, the way object aliases resolve. */
 function findUpload(raw: string): AvnacUpload | null {
   const uploads = getUploads()
@@ -583,16 +643,29 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         const fontError = await ensurePatchFont(patch)
         if (fontError) return fail(fontError)
 
+        // A patch this object type cannot accept would otherwise be reported as
+        // a success with an unchanged canvas.
+        const target = scene.canvas.objects.find(o => o.id === id)
+        const dropped = target ? unappliedProperties(target.kind, patch) : []
+        if (target && dropped.length === Object.keys(patch).length) {
+          return fail(
+            `Nothing changed on ${aliasFor(map, id)}. ` + unappliedReason(target.kind, dropped),
+          )
+        }
+
         ref.current?.updateObject(id, patch)
         await settle()
 
         const after = readScene(ref)
         const updated = after?.canvas.objects.find(o => o.id === id)
         if (!after || !updated) return ok(`Updated ${aliasFor(map, id)}.`)
+        const note = dropped.length > 0 && target ? ` ${unappliedReason(target.kind, dropped)}` : ''
         return ok(
-          ['Updated. That object is now:', '', objectRow(after.map, updated, !!updated.role)].join(
-            '\n',
-          ),
+          [
+            `Updated.${note} That object is now:`,
+            '',
+            objectRow(after.map, updated, !!updated.role),
+          ].join('\n'),
         )
       },
     },
@@ -780,6 +853,7 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         // a new object reaches exactly the same styling as an existing one and
         // the two paths cannot drift apart.
         const style = readStylePatch(args)
+        const droppedOnNew = unappliedProperties(kind, style)
         if (Object.keys(style).length > 0) {
           const fontError = await ensurePatchFont(style)
           if (fontError) return fail(fontError)
@@ -795,9 +869,14 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         }
         const after = readScene(ref)
         const made = after?.canvas.objects.find(o => o.id === newId)
-        if (!after || !made) return ok(`Added a ${kind}.`)
+        if (!after || !made) return ok(`Added ${article(kind)} ${kind}.`)
+        const note = droppedOnNew.length > 0 ? ` ${unappliedReason(kind, droppedOnNew)}` : ''
         return ok(
-          [`Added a ${kind}. It is now:`, '', objectRow(after.map, made, !!made.role)].join('\n'),
+          [
+            `Added ${article(kind)} ${kind}.${note} It is now:`,
+            '',
+            objectRow(after.map, made, !!made.role),
+          ].join('\n'),
         )
       },
     },
@@ -849,20 +928,39 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         const fontError = await ensurePatchFont(patch)
         if (fontError) return fail(fontError)
 
+        // Matches can be of mixed kinds, so report per property how many of them
+        // could not take it rather than pretending the batch was uniform.
+        const dropCounts = new Map<string, number>()
+        for (const o of result.matched) {
+          for (const property of unappliedProperties(o.kind, patch)) {
+            dropCounts.set(property, (dropCounts.get(property) ?? 0) + 1)
+          }
+        }
+        const total = result.matched.length
+        const fullyDropped = [...dropCounts.entries()]
+          .filter(([, count]) => count === total)
+          .map(([property]) => property)
+        if (fullyDropped.length === Object.keys(patch).length) {
+          return fail(
+            `Nothing changed. ${fullyDropped.join(', ')} cannot apply to any of the ` +
+              `${total} matched object(s): ${[...new Set(result.matched.map(o => o.kind))].join(', ')}.`,
+          )
+        }
+
         const ids = result.matched.map(o => o.id)
         const changed = ref.current?.updateMany(ids, patch) ?? 0
         await settle()
         const after = readScene(ref)
-        if (!after) return ok(`Updated ${changed} object(s).`)
+        const notes = [...dropCounts.entries()].map(
+          ([property, count]) => `${property} was ignored on ${count} of ${total}`,
+        )
+        const head =
+          `Updated ${changed} object(s) in one call` +
+          (notes.length > 0 ? ` (${notes.join('; ')}):` : ':')
+        if (!after) return ok(head)
         const rows = after.canvas.objects.filter(o => ids.includes(o.id))
         const showRole = rows.some(o => o.role)
-        return ok(
-          [
-            `Updated ${changed} object(s) in one call:`,
-            '',
-            ...rows.map(o => objectRow(after.map, o, showRole)),
-          ].join('\n'),
-        )
+        return ok([head, '', ...rows.map(o => objectRow(after.map, o, showRole))].join('\n'))
       },
     },
     {
@@ -1190,6 +1288,19 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
           // to be loaded before the preview, not on approval.
           const fontError = await ensurePatchFont(patch)
           if (fontError) return fail(fontError)
+          // A change that cannot apply would ghost as nothing at all, so the
+          // person would be asked to approve an invisible edit.
+          const target = scene.canvas.objects.find(o => o.id === id)
+          if (target) {
+            const dropped = unappliedProperties(target.kind, patch)
+            if (dropped.length === Object.keys(patch).length) {
+              return fail(
+                `The change to ${aliasFor(scene.map, id)} would do nothing, so there is no ` +
+                  `proposal worth showing. ${unappliedReason(target.kind, dropped)}`,
+              )
+            }
+            for (const property of dropped) delete patch[property]
+          }
           changes.push({
             id,
             alias: aliasFor(scene.map, id),
