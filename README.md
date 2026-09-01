@@ -30,10 +30,12 @@ Duet removes that layer entirely and replaces it with an open browser standard. 
 
 **Added**
 
-- A WebMCP tool layer — sixteen tools registered through `document.modelContext`, plus an entry tool on every other route so an agent handed the bare link can find them
+- A WebMCP tool layer — seventeen tools registered through `document.modelContext`, plus an entry tool so an agent handed the bare link can find them
 - A template system, so the agent starts from a hand-authored layout instead of composing by coordinate
 - Semantic `role` tags on objects (`headline`, `subhead`, `accent`, …) so an agent can address things by meaning rather than position
 - Readable object ids (`text_1`, `rect_2`) at the tool boundary, without rewriting any upstream id
+- An image library the agent can see, so "put my photo in the flyer" places the person's actual file
+- Templates saved from the canvas in-app, picked up by `list_templates` without a rebuild
 - A "WebMCP not detected" banner, so the page explains itself in a browser without support
 
 **Removed**
@@ -52,6 +54,7 @@ Duet removes that layer entirely and replaces it with an open browser standard. 
 | `get_selection` | What the person has selected **right now** |
 | `list_templates` | The starting layouts available |
 | `describe_layout` | Overlaps, objects outside the frame, near-miss alignment, contrast failures |
+| `list_uploads` | Images the person has uploaded, so "my photo" means their actual file |
 
 **Editing**
 
@@ -85,9 +88,16 @@ batch edit and a proposal can never support different things.
 
 | Tool | What it is for |
 | --- | --- |
-| `open_design_editor` | Registered on every route *except* the editor. The design tools mount at `/create`, so an agent given the bare link would otherwise find an empty registry with no hint that a tool surface exists one route away |
+| `open_design_editor` | The design tools mount at `/create`, so an agent given the bare domain would otherwise find an empty registry with no hint that a tool surface exists one route away. Navigates there and returns what became available. Registered on every route, and safe to call inside the editor |
 
-Every tool returns readable text describing the resulting state, and every failure returns an explanation rather than throwing — an unknown id comes back with the list of ids that do exist.
+Every tool returns readable text describing the resulting state, and every failure returns an
+explanation rather than throwing — an unknown id comes back with the list of ids that do exist.
+
+**No tool reports success for something that did not happen.** The editor's own setters are
+forgiving by design: asking a vector board for a fill returns it untouched rather than throwing. An
+agent told "Updated" while nothing moved has no way to discover the difference, so every write first
+checks what the target cannot accept and says so — `fill was ignored: a vector-board has no editable
+paint or type of its own` — failing outright when nothing at all would have changed.
 
 ## Running it
 
@@ -104,20 +114,39 @@ npm run dev      # http://localhost:3300
 The editor works as an ordinary design tool in any browser. To let an agent drive it you need a WebMCP-capable client:
 
 - **ChatGPT's in-app browser** — supports WebMCP with no setup
-- **Chrome 146+** — enable `chrome://flags/#enable-webmcp-testing`
+- **Chrome 146+** — enable `chrome://flags/#enable-webmcp-testing`, then drive the tools from the
+  [Model Context Tool Inspector](https://github.com/beaufortfrancois/model-context-tool-inspector),
+  whose built-in Gemini integration picks tools from their descriptions
 - **Claude Code** — via a community WebMCP bridge extension
 
 If none is present the app shows a banner explaining how to enable one. It never breaks; it just stays an ordinary editor.
 
 > The Claude in Chrome extension does **not** natively consume WebMCP at the time of writing ([open feature request](https://github.com/anthropics/claude-code/issues/30645)); it drives pages by screenshot, which is the approach WebMCP exists to replace.
 
+### Where your work is kept
+
+Nothing is uploaded, so everything lives in the browser you are using:
+
+| What | Where |
+| --- | --- |
+| Documents, uploaded images, saved templates | IndexedDB, database `avnac-editor` |
+| Vector boards | `localStorage`, keyed per document |
+
+Renaming that database, or the `AVNAC_STORAGE_KEY` beside it, would orphan every document a person
+has saved. The `avnac-` prefix is deliberate: it is the fork's own name, and it is load-bearing.
+
 ## Development
+
+Every command works from the repo root or from `frontend/`:
 
 ```bash
 npm test         # vitest
 npm run lint     # biome
 npm run build
 ```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the rules the tool layer follows — they are not style
+preferences, each one is a bug that has already happened here.
 
 ## Licence
 

@@ -75,8 +75,11 @@ rather than a person. They are not style preferences; each one is a bug that has
 | `lib/avnac-ai-paint.ts` | CSS colour and gradient parsing at the tool boundary |
 | `lib/avnac-ai-transforms.ts` | Pure scene transforms, React-free and unit tested |
 | `lib/avnac-ai-aliases.ts` | UUID ↔ `text_1` / `rect_2` translation |
+| `lib/avnac-uploads.ts` | The person's image library, shared with the agent |
+| `lib/avnac-user-templates.ts` | Templates captured from the canvas, plus role guessing |
+| `lib/avnac-proposals.ts`, `lib/avnac-activity.ts` | Proposal state and the tool-call log |
 | `components/scene-editor/webmcp-host.tsx` | Registration inside the editor |
-| `components/webmcp-entry-host.tsx` | The one tool registered on every other route |
+| `components/webmcp-entry-host.tsx` | The tool that gets an agent from the bare link into `/create` |
 
 **The contract**
 
@@ -85,15 +88,26 @@ rather than a person. They are not style preferences; each one is a bug that has
   without another round trip. Use `fail()`, not `throw`.
 - **Every write returns the resulting state**, never `"ok"`. A tool that says "done" teaches the
   agent nothing.
-- **Never report success for something invisible.** If a value was accepted but cannot render — a
-  stroke colour on an object whose width is 0, a canvas background hidden under a full-bleed
-  rectangle — say so in the result. Silent no-ops are the single most common defect in this layer.
+- **Never report success for something invisible.** Silent no-ops are the single most common defect
+  in this layer, because they look exactly like success. Three kinds have already shipped here: a
+  stroke colour on an object whose `strokeWidth` is 0, a canvas background hidden under a full-bleed
+  rectangle, and `fill` on an object type that has none. `unappliedProperties` in
+  `avnac-webmcp-tools.ts` covers the last category — extend it rather than special-casing a tool, and
+  fail outright when *nothing* would have changed.
 - **Every schema property needs a `description`.** No bare `{ type: 'string' }`.
 - **Descriptions say when *not* to reach for a tool**, and which tool to use instead. That is where
   skilful use actually lives, and it is what gets graded.
 - Read-only tools set `annotations.readOnlyHint: true`.
 - Shared appearance properties belong in `STYLE_PROPERTIES` and `readStylePatch`, so `update_object`,
   `update_many`, `add_object` and `propose_changes` cannot drift apart in what they support.
+- Capability facts (which types have a fill, a stroke, a corner radius) live in the `kindSupports*`
+  predicates in `avnac-scene.ts`. The tools only hold a `kind` string, so a second copy of those
+  lists in the tool layer would drift silently.
+- **State two worlds need is a module singleton**, not React state: `subscribe`/`getSnapshot`, read
+  through `useSyncExternalStore`. The tool layer is plain functions with no React lifecycle, and the
+  panels are deep in the tree. Proposals, activity, uploads and user templates all do this — follow
+  it rather than inventing a fifth shape. Anything the tools read must also expose an
+  `ensure*Loaded()`, or the first call after a reload reports an empty store that is not empty.
 
 **Traps that cost time here before**
 
@@ -110,6 +124,13 @@ rather than a person. They are not style preferences; each one is a bug that has
   wrong height, and nothing reports it.
 - **`baseObjectFromUnknown` enumerates fields by hand.** Any new field on `SceneObjectBase` must be
   added there too, or it is silently dropped on every save and load.
+- **There is exactly one `openDb`**, exported from `avnac-editor-idb.ts`. Documents, uploads and
+  saved templates share one database, and two modules opening one name at different versions throws
+  `VersionError`. Adding a store means bumping `DB_VERSION` and adding another *guarded* create —
+  never an unguarded one, and never a second `indexedDB.open`.
+- **Text in an unloaded font measures wrong.** `apply_template` awaits the families the document
+  actually uses, not a fixed pair. Hardcoding that list is how a template in an unexpected font ends
+  up clipped with nothing to report it.
 
 **Never rename `DB_NAME = 'avnac-editor'` or `AVNAC_STORAGE_KEY`.** Renaming either orphans every
 document a user has saved, for no benefit. Internal `avnac-*` identifiers are deliberate: they
