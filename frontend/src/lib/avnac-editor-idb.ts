@@ -15,8 +15,18 @@ import {
 } from './avnac-vector-boards-storage'
 
 const DB_NAME = 'avnac-editor'
-const DB_VERSION = 1
+/**
+ * Bumped to 2 to add the uploads and user-template stores.
+ *
+ * NEVER rename DB_NAME: it would orphan every document a user has saved.
+ */
+const DB_VERSION = 2
 const STORE = 'documents'
+
+/** Image library the person builds up, shared with the agent. */
+export const UPLOADS_STORE = 'uploads'
+/** Templates captured from the canvas in-app, alongside the built-in six. */
+export const USER_TEMPLATES_STORE = 'userTemplates'
 
 export type AvnacEditorIdbRecord = {
   id: string
@@ -51,7 +61,17 @@ function normalizeEditorRecord(
   }
 }
 
-function openDb(): Promise<IDBDatabase> {
+/**
+ * The single entry point to this database.
+ *
+ * Exported because the uploads and user-template stores live in the same
+ * database. Two modules calling `indexedDB.open` on one name with different
+ * versions throws VersionError, so there must only ever be one of these.
+ *
+ * Every create is guarded, so the upgrade is purely additive and cannot touch
+ * documents a user already saved.
+ */
+export function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
     req.onerror = () => reject(req.error ?? new Error('indexedDB open failed'))
@@ -60,6 +80,12 @@ function openDb(): Promise<IDBDatabase> {
       const db = req.result
       if (!db.objectStoreNames.contains(STORE)) {
         db.createObjectStore(STORE, { keyPath: 'id' })
+      }
+      if (!db.objectStoreNames.contains(UPLOADS_STORE)) {
+        db.createObjectStore(UPLOADS_STORE, { keyPath: 'id' })
+      }
+      if (!db.objectStoreNames.contains(USER_TEMPLATES_STORE)) {
+        db.createObjectStore(USER_TEMPLATES_STORE, { keyPath: 'id' })
       }
     }
   })

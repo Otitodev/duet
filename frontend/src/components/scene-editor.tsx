@@ -85,6 +85,7 @@ import {
   constrainAspectRatioBounds,
   type DragState,
   getHandleLocalPosition,
+  fileToDataUrl,
   imageFilesFromTransfer,
   isCornerHandle,
   isImageFile,
@@ -1150,12 +1151,7 @@ const SceneEditor = forwardRef<SceneEditorHandle, SceneEditorProps>(function Sce
       let placedCount = 0
       for (const file of list) {
         if (!isImageFile(file)) continue
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload = () => resolve(String(reader.result))
-          reader.onerror = () => reject(reader.error)
-          reader.readAsDataURL(file)
-        })
+        const dataUrl = await fileToDataUrl(file)
         await placeImageObject(
           dataUrl,
           opts

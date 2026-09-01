@@ -23,6 +23,22 @@ export function isImageFile(file: File): boolean {
   return /\.(avif|bmp|gif|jpe?g|png|svg|webp)$/i.test(file.name)
 }
 
+/**
+ * Read a file as a data URL.
+ *
+ * Data URLs, rather than object URLs, because the result is persisted and
+ * re-rendered later: a blob: URL dies with the page, and an image loaded from
+ * one cannot be exported without tainting the canvas.
+ */
+export function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error ?? new Error(`Could not read ${file.name}`))
+    reader.readAsDataURL(file)
+  })
+}
+
 export function transferMayContainFiles(dt: DataTransfer | null): boolean {
   if (!dt) return false
   return Array.from(dt.types).some(type => type === 'Files' || type === 'application/x-moz-file')

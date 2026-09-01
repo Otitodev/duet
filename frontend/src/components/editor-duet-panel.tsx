@@ -19,10 +19,18 @@ import {
   toggleChange,
 } from '../lib/avnac-proposals'
 import {
+  deleteUserTemplate,
+  getUserTemplates,
+  saveUserTemplate,
+  subscribeUserTemplates,
+  templateSourceCode,
+} from '../lib/avnac-user-templates'
+import {
   editorSidebarPanelLeftClass,
   editorSidebarPanelTopClass,
 } from '../lib/editor-sidebar-panel-layout'
 import { useAiController } from './scene-editor/ai-controller-context'
+import { useEditorStore } from './scene-editor/editor-store'
 
 type Props = {
   open: boolean
@@ -229,6 +237,123 @@ function TryAsking() {
 }
 
 /**
+ * Save the canvas as a template the agent can reuse.
+ *
+ * The six built-in templates are compiled into the bundle, so adding one
+ * normally means editing source and redeploying. This makes the loop immediate:
+ * design a layout by hand, save it, and list_templates sees it on the next call.
+ *
+ * Saved templates live only in this browser, which is what "Copy code" is for --
+ * it emits the source to paste into src/data/templates.ts so a good one can ship
+ * to everyone.
+ */
+function TemplateSection() {
+  const doc = useEditorStore(state => state.doc)
+  const templates = useSyncExternalStore(subscribeUserTemplates, getUserTemplates, getUserTemplates)
+  const [saving, setSaving] = useState(false)
+  const [name, setName] = useState('')
+  const [occasion, setOccasion] = useState('')
+  const [note, setNote] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!note) return
+    const t = window.setTimeout(() => setNote(null), 2400)
+    return () => window.clearTimeout(t)
+  }, [note])
+
+  async function save() {
+    const result = await saveUserTemplate({ name, occasion, document: doc })
+    if (!result.ok) {
+      setNote(result.reason)
+      return
+    }
+    setNote(`Saved as ${result.template.id}. Ask an agent to apply it.`)
+    setName('')
+    setOccasion('')
+    setSaving(false)
+  }
+
+  return (
+    <div className="border-b border-black/[0.06] px-3 py-2.5">
+      <div className="flex items-baseline justify-between">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-neutral-500">
+          Templates
+        </span>
+        <button
+          type="button"
+          className="cursor-pointer text-[12px] font-medium text-violet-700 hover:underline"
+          onClick={() => setSaving(v => !v)}
+        >
+          {saving ? 'Cancel' : 'Save this canvas'}
+        </button>
+      </div>
+
+      {saving ? (
+        <div className="mt-2 space-y-1.5">
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="Name, e.g. Wedding invite"
+            className="w-full rounded-lg border border-black/[0.1] px-2.5 py-1.5 text-[13px] text-neutral-800 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-300"
+          />
+          <input
+            value={occasion}
+            onChange={e => setOccasion(e.target.value)}
+            placeholder="When should an agent pick this?"
+            className="w-full rounded-lg border border-black/[0.1] px-2.5 py-1.5 text-[13px] text-neutral-800 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-violet-300"
+          />
+          <button
+            type="button"
+            disabled={!name.trim()}
+            onClick={() => void save()}
+            className="w-full cursor-pointer rounded-lg bg-violet-600 px-3 py-1.5 text-[13px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Save template
+          </button>
+        </div>
+      ) : null}
+
+      {templates.length > 0 ? (
+        <ul className="mt-2 space-y-1">
+          {templates.map(t => (
+            <li
+              key={t.id}
+              className="flex items-center gap-2 rounded-lg bg-black/[0.02] px-2 py-1.5"
+            >
+              <span className="min-w-0 flex-1 truncate text-[12px] text-neutral-700" title={t.name}>
+                {t.name}
+                <span className="ml-1 font-mono text-[11px] text-neutral-400">{t.id}</span>
+              </span>
+              <button
+                type="button"
+                className="cursor-pointer text-[11px] text-neutral-500 hover:text-violet-700"
+                onClick={() => {
+                  void navigator.clipboard
+                    ?.writeText(templateSourceCode(t))
+                    .then(() => setNote('Template code copied. Paste it into data/templates.ts.'))
+                }}
+              >
+                Copy code
+              </button>
+              <button
+                type="button"
+                className="cursor-pointer text-[11px] text-neutral-500 hover:text-red-600"
+                onClick={() => void deleteUserTemplate(t.id)}
+                aria-label={`Delete ${t.name}`}
+              >
+                Delete
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {note ? <p className="mt-1.5 text-[11px] text-neutral-500">{note}</p> : null}
+    </div>
+  )
+}
+
+/**
  * The Duet panel: where the agent's work becomes reviewable.
  *
  * Holds the proposal review card and the tool-call activity log. The log is the
@@ -266,6 +391,8 @@ export default function EditorDuetPanel({ open, onClose }: Props) {
       </div>
 
       {proposal ? <ReviewCard proposal={proposal} /> : null}
+
+      <TemplateSection />
 
       {activity.length === 0 ? (
         proposal ? null : (

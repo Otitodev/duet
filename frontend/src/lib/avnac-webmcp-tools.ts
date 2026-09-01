@@ -10,10 +10,11 @@
 import type { MutableRefObject } from 'react'
 import { GOOGLE_FONT_FAMILIES } from '../data/google-font-families'
 import {
+  allTemplates,
   DUET_TEMPLATES,
   findTemplate,
-  TEMPLATE_FONT_FAMILIES,
   TEMPLATE_IDS,
+  templateFontFamilies,
 } from '../data/templates'
 import {
   type AliasMap,
@@ -39,6 +40,8 @@ import {
   openProposal,
   type Proposal,
 } from './avnac-proposals'
+import { type AvnacUpload, ensureUploadsLoaded, getUploads, uploadAlias } from './avnac-uploads'
+import { ensureUserTemplatesLoaded } from './avnac-user-templates'
 import { fail, guarded, ok, type WebMcpTool } from './avnac-webmcp'
 import { ensureGoogleFontsForFamilies } from './load-google-font'
 
@@ -333,6 +336,25 @@ async function ensurePatchFont(patch: Record<string, unknown>): Promise<string |
 /** How long check_proposal waits before reporting "still pending". */
 const DECISION_WAIT_MS = 20_000
 
+/** Resolve an upload alias or raw id, the way object aliases resolve. */
+function findUpload(raw: string): AvnacUpload | null {
+  const uploads = getUploads()
+  const wanted = raw.trim().toLowerCase()
+  const index = uploads.findIndex((_, i) => uploadAlias(i) === wanted)
+  if (index !== -1) return uploads[index]
+  return uploads.find(u => u.id === raw.trim()) ?? null
+}
+
+/** Name what was wrong and list what exists, so the agent self-corrects. */
+function unknownUploadMessage(raw: string): string {
+  const uploads = getUploads()
+  if (uploads.length === 0) {
+    return `There is no upload called "${raw}", and nothing has been uploaded yet.`
+  }
+  const have = uploads.map((u, i) => `${uploadAlias(i)} (${u.name})`).join(', ')
+  return `There is no upload called "${raw}". Uploads available: ${have}.`
+}
+
 /** Gradients are long; the review card only has room for the ends. */
 function shortPaint(css: string): string {
   const value = parseAiPaint(css)
@@ -584,15 +606,22 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         'Never refuse a request for want of an exact template.',
       inputSchema: { type: 'object', properties: {}, required: [] },
       annotations: { readOnlyHint: true },
-      execute: () =>
-        ok(
+      execute: async () => {
+        // Saved templates live in IndexedDB, and the tool layer has no React
+        // lifecycle to hydrate them. Without this the first call after a reload
+        // reports only the built-in set.
+        await ensureUserTemplatesLoaded()
+        const templates = allTemplates()
+        const saved = templates.length - DUET_TEMPLATES.length
+        return ok(
           [
-            `${DUET_TEMPLATES.length} templates available:`,
+            `${templates.length} templates available` +
+              (saved > 0 ? ` (${saved} saved by the person from their own canvas):` : ':'),
             '',
-            ...DUET_TEMPLATES.map(
+            ...templates.map(
               t =>
                 '  ' +
-                t.id.padEnd(14) +
+                t.id.padEnd(18) +
                 ' ' +
                 `${t.width}x${t.height}`.padEnd(10) +
                 ' ' +
@@ -603,7 +632,8 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
             '',
             'Apply one with apply_template, then fill it in with update_many by role.',
           ].join('\n'),
-        ),
+        )
+      },
     },
 
     {
@@ -619,26 +649,34 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         properties: {
           template_id: {
             type: 'string',
-            description: `Which layout to load. One of: ${TEMPLATE_IDS.join(', ')}.`,
+            description:
+              'Which layout to load. Call list_templates first: the person may have saved ' +
+              `templates of their own beyond the built-in set (${TEMPLATE_IDS.join(', ')}).`,
           },
         },
         required: ['template_id'],
       },
       execute: async args => {
         const wanted = typeof args.template_id === 'string' ? args.template_id : ''
+        await ensureUserTemplatesLoaded()
         const template = findTemplate(wanted)
         if (!template) {
           return fail(
             'No template called "' +
               wanted +
               '". Available templates: ' +
-              TEMPLATE_IDS.join(', ') +
+              allTemplates()
+                .map(t => t.id)
+                .join(', ') +
               '.',
           )
         }
         // Measuring text before its font is ready produces wrong heights, and
         // that only becomes visible once the layout is on screen.
-        await ensureGoogleFontsForFamilies(TEMPLATE_FONT_FAMILIES)
+        // Read the families off the document rather than assuming the built-in
+        // pair: a saved template can use any family the editor offers, and text
+        // measured against a fallback face gets the wrong height silently.
+        await ensureGoogleFontsForFamilies(templateFontFamilies(template))
         const loaded = ref.current?.loadDocument(template.document)
         if (loaded === null || loaded === undefined) {
           return fail(`The "${template.id}" template could not be loaded.`)
@@ -665,9 +703,19 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
           y: { type: 'number', description: 'Top edge in canvas pixels, from the top.' },
           width: { type: 'number', description: 'Width in canvas pixels.' },
           height: { type: 'number', description: 'Height in canvas pixels. Ignored for text.' },
+          upload_id: {
+            type: 'string',
+            description:
+              'An image the person has already uploaded, e.g. "upload_1" from list_uploads. ' +
+              'PREFER this over url whenever they refer to something of their own - "my photo", ' +
+              '"the logo I added", "that picture".',
+          },
           url: {
             type: 'string',
-            description: 'Image source, when adding an image: an https URL or a data: URI.',
+            description:
+              'Image source when adding an image the person has not uploaded: a data: URI, or ' +
+              'an https URL. A remote URL only works if that host sends CORS headers, so a ' +
+              'data: URI is the reliable choice.',
           },
           ...STYLE_PROPERTIES,
           role: {
@@ -705,8 +753,20 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         } else if (kind === 'ellipse') {
           created = controller.addEllipse({ ...place, width, height, fill })
         } else if (kind === 'image') {
-          const url = typeof args.url === 'string' ? args.url : ''
-          if (!url) return fail('Adding an image needs a "url": an https URL or a data: URI.')
+          let url = typeof args.url === 'string' ? args.url : ''
+          const uploadId = typeof args.upload_id === 'string' ? args.upload_id.trim() : ''
+          if (uploadId) {
+            await ensureUploadsLoaded()
+            const upload = findUpload(uploadId)
+            if (!upload) return fail(unknownUploadMessage(uploadId))
+            url = upload.dataUrl
+          }
+          if (!url) {
+            return fail(
+              'Adding an image needs either an "upload_id" from list_uploads, or a "url". ' +
+                'Call list_uploads to see what the person has already added.',
+            )
+          }
           created = await controller.addImageFromUrl({ ...place, url, width, height })
         } else {
           return fail(`Cannot add "${kind}". Supported types are: text, rect, ellipse, image.`)
@@ -1204,6 +1264,43 @@ export function buildDuetWebmcpTools(ref: ControllerRef): WebMcpTool[] {
         const report = reportProposal(settled)
         if (settled.status === 'pending' || !after) return ok(report)
         return ok([report, '', formatScene(after)].join('\n'))
+      },
+    },
+
+    {
+      name: 'list_uploads',
+      description:
+        'List the images the person has uploaded into this editor. Use this whenever they refer ' +
+        'to an image of their own - "my photo", "the logo I uploaded", "that picture" - so you ' +
+        'can place the real file rather than guessing at a URL. Pass an id from here to ' +
+        'add_object as upload_id.',
+      inputSchema: { type: 'object', properties: {}, required: [] },
+      annotations: { readOnlyHint: true },
+      execute: async () => {
+        const uploads = await ensureUploadsLoaded()
+        if (uploads.length === 0) {
+          return ok(
+            'Nothing has been uploaded. The person can drop an image straight onto the canvas, ' +
+              'or add one from the Uploads panel in the left sidebar.',
+          )
+        }
+        return ok(
+          [
+            `${uploads.length} uploaded image(s):`,
+            '',
+            ...uploads.map(
+              (u, i) =>
+                '  ' +
+                uploadAlias(i).padEnd(10) +
+                ' ' +
+                `${u.width}x${u.height}`.padEnd(11) +
+                ' ' +
+                u.name,
+            ),
+            '',
+            'Place one with add_object { type: "image", upload_id: "upload_1" }.',
+          ].join('\n'),
+        )
       },
     },
 

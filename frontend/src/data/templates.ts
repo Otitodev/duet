@@ -21,6 +21,7 @@
  */
 
 import type { AvnacDocument, SceneObject } from '../lib/avnac-scene'
+import { type AvnacUserTemplate, getUserTemplates } from '../lib/avnac-user-templates'
 
 export const TEMPLATE_FONT_FAMILIES = ['Fraunces', 'Inter'] as const
 
@@ -166,6 +167,32 @@ function build(
     width,
     height,
     document: makeDocument(width, height, bg, centreContent(objects, height)),
+  }
+}
+
+/**
+ * A template from an already-built document, rather than from the tplRect and
+ * tplText factories.
+ *
+ * Those factories only understand solid fills, so they cannot express a
+ * gradient, stroke, shadow or blur. A design captured from the canvas already
+ * is a document, so it needs no factories at all -- which is also the shape
+ * "copy template code" emits.
+ */
+export function fromDocument(
+  id: string,
+  name: string,
+  occasion: string,
+  document: unknown,
+): DuetTemplate {
+  const doc = document as AvnacDocument
+  return {
+    id,
+    name,
+    occasion,
+    width: doc.artboard.width,
+    height: doc.artboard.height,
+    document: doc,
   }
 }
 
@@ -438,7 +465,46 @@ export const DUET_TEMPLATES: DuetTemplate[] = [
 
 export function findTemplate(id: string): DuetTemplate | null {
   const key = id.trim().toLowerCase()
-  return DUET_TEMPLATES.find(t => t.id === key) ?? null
+  const builtIn = DUET_TEMPLATES.find(t => t.id === key)
+  if (builtIn) return builtIn
+  const saved = getUserTemplates().find(t => t.id.toLowerCase() === key)
+  return saved ? userTemplateAsDuetTemplate(saved) : null
+}
+
+/** A saved template in the same shape as a built-in one. */
+export function userTemplateAsDuetTemplate(t: AvnacUserTemplate): DuetTemplate {
+  return {
+    id: t.id,
+    name: t.name,
+    occasion: t.occasion,
+    width: t.width,
+    height: t.height,
+    document: t.document,
+  }
+}
+
+/**
+ * Every template the agent can choose from: the built-in set plus anything
+ * saved from the canvas in this browser.
+ */
+export function allTemplates(): DuetTemplate[] {
+  return [...DUET_TEMPLATES, ...getUserTemplates().map(userTemplateAsDuetTemplate)]
+}
+
+/**
+ * The font families a document actually uses.
+ *
+ * apply_template used to await a hardcoded pair, which was fine while every
+ * template was Fraunces or Inter. A saved template can use any of the families
+ * the editor offers, and measuring text against a fallback face gives the box
+ * the wrong height with nothing to report it.
+ */
+export function templateFontFamilies(template: DuetTemplate): string[] {
+  const families = new Set<string>(TEMPLATE_FONT_FAMILIES)
+  for (const obj of template.document.objects) {
+    if (obj.type === 'text' && obj.fontFamily) families.add(obj.fontFamily)
+  }
+  return [...families]
 }
 
 /**
