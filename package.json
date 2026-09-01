@@ -1,11 +1,14 @@
 {
-  "name": "avnac",
+  "name": "duet",
   "private": true,
   "license": "AGPL-3.0-only",
   "scripts": {
-    "lint": "npm --prefix frontend run lint && npm --prefix backend run lint",
-    "lint:fix": "npm --prefix frontend run lint:fix && npm --prefix backend run lint:fix",
-    "format": "npm --prefix frontend run format && npm --prefix backend run format",
-    "format:check": "npm --prefix frontend run format:check && npm --prefix backend run format:check"
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "test": "npm --prefix frontend run test",
+    "lint": "npm --prefix frontend run lint",
+    "lint:fix": "npm --prefix frontend run lint:fix",
+    "format": "npm --prefix frontend run format",
+    "format:check": "npm --prefix frontend run format:check"
   }
 }
