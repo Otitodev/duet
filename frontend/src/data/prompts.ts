@@ -10,8 +10,8 @@
  * pulling the panel, the proposal store and the activity store into its bundle.
  */
 export const TRY_ASKING = [
-  'Design a poster for a tech conference called WebMCP Summit 2026',
-  'Make these two bigger and line them up',
+  'Design a flyer for a tech event called WebMCP Summit 2026',
+  'Add a call to action at the bottom',
   'Make the background a deep teal to amber gradient',
-  'Now give me a TikTok version and export it',
+  'Resize it for an Instagram post and export it as a JPG',
 ] as const
